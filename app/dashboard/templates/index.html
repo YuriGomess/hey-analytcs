@@ -120,6 +120,18 @@
       align-items: center;
     }
 
+    .filter-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .filter-hint {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.2;
+    }
+
     select, button {
       background: var(--panel-soft);
       color: var(--text);
@@ -129,6 +141,23 @@
       font: inherit;
       font-size: 0.9rem;
       cursor: pointer;
+    }
+
+    select[multiple] {
+      min-width: 250px;
+      min-height: 124px;
+      padding: 8px;
+    }
+
+    select[multiple] option {
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin: 2px 0;
+    }
+
+    select[multiple] option:checked {
+      background: linear-gradient(180deg, rgba(23, 198, 163, 0.28), rgba(23, 198, 163, 0.16));
+      color: var(--text);
     }
 
     button.active {
@@ -249,12 +278,15 @@
       <div class="panel-head">
         <h2>Séries de Conversão</h2>
         <div class="controls">
-          <select id="campaignFilter">
-            <option value="all">Todas campanhas</option>
-            {% for campaign in campaigns %}
-              <option value="{{ campaign.campaign_id }}">{{ campaign.campaign_name }}</option>
-            {% endfor %}
-          </select>
+          <div class="filter-stack">
+            <select id="campaignFilter" multiple>
+              <option value="all" selected>Todas campanhas</option>
+              {% for campaign in campaigns %}
+                <option value="{{ campaign.campaign_id }}">{{ campaign.campaign_name }}</option>
+              {% endfor %}
+            </select>
+            <span class="filter-hint">Use Ctrl ou Shift para combinar campanhas. Se "Todas campanhas" estiver selecionada, o gráfico mostra tudo.</span>
+          </div>
           <button data-period="7">7d</button>
           <button data-period="14">14d</button>
           <button class="active" data-period="30">30d</button>
@@ -401,6 +433,41 @@
     const palette = ["#17c6a3", "#f7b34c", "#5ea8ff", "#ff7f51", "#7ce38b", "#b79cff", "#ffcf70"];
 
     let chart = null;
+    const campaignFilter = document.getElementById("campaignFilter");
+
+    function getSelectedCampaignIds() {
+      const selectedValues = Array.from(campaignFilter.selectedOptions).map((option) => option.value);
+      if (!selectedValues.length || selectedValues.includes("all")) {
+        return [];
+      }
+      return selectedValues;
+    }
+
+    function normalizeCampaignSelection(event) {
+      const selectedValues = Array.from(campaignFilter.selectedOptions).map((option) => option.value);
+      const allOption = campaignFilter.querySelector('option[value="all"]');
+
+      if (!selectedValues.length) {
+        allOption.selected = true;
+        return;
+      }
+
+      if (selectedValues.includes("all") && selectedValues.length > 1) {
+        const targetValue = event?.target?.value;
+        if (targetValue === "all") {
+          Array.from(campaignFilter.options).forEach((option) => {
+            option.selected = option.value === "all";
+          });
+        } else {
+          allOption.selected = false;
+        }
+      }
+
+      const hasSpecificCampaign = Array.from(campaignFilter.selectedOptions).some((option) => option.value !== "all");
+      if (hasSpecificCampaign) {
+        allOption.selected = false;
+      }
+    }
 
     function initChart() {
       const ctx = document.getElementById("funnelChart");
@@ -439,13 +506,13 @@
         initChart();
       }
 
-      const campaignFilter = document.getElementById("campaignFilter").value;
+      const selectedCampaignIds = getSelectedCampaignIds();
       const labels = dates.slice(-selectedPeriod);
       const datasets = [];
 
       let idx = 0;
       for (const series of campaignSeries) {
-        if (campaignFilter !== "all" && series.campaign_id !== campaignFilter) continue;
+        if (selectedCampaignIds.length && !selectedCampaignIds.includes(series.campaign_id)) continue;
 
         datasets.push({
           label: `${series.campaign_name} (${selectedMetric.replaceAll("_", " ")})`,
@@ -482,7 +549,10 @@
       });
     });
 
-    document.getElementById("campaignFilter").addEventListener("change", renderChart);
+    campaignFilter.addEventListener("change", (event) => {
+      normalizeCampaignSelection(event);
+      renderChart();
+    });
 
     const campaignTable = document.getElementById("campaignTable");
     campaignTable.querySelectorAll("th").forEach((th, index) => {
