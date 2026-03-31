@@ -10,7 +10,7 @@ from app.dashboard.router import router as dashboard_router
 from app.database import close_db_pool, get_db_cursor, init_db
 from app.integrations.monday import MondayClient
 from app.integrations.typeform import parse_response, validate_signature
-from app.scheduler import start_scheduler, stop_scheduler
+from app.scheduler import start_scheduler, stop_scheduler, sync_meta_ads
 
 logging.basicConfig(
     level=logging.INFO,
@@ -158,6 +158,34 @@ def health():
         # temporarily unreachable at cold-start. The "database" field
         # exposes the real connectivity state for observability.
         return {"status": "ok", "database": "disconnected", "detail": str(exc)}
+
+
+@app.post("/admin/sync-meta")
+def admin_sync_meta(
+    x_admin_sync_secret: str | None = Header(default=None, alias="X-Admin-Sync-Secret"),
+):
+    configured_secret = os.getenv("ADMIN_SYNC_SECRET", "")
+    if not configured_secret:
+        raise HTTPException(status_code=503, detail="ADMIN_SYNC_SECRET not configured")
+
+    if x_admin_sync_secret != configured_secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        result = sync_meta_ads()
+        logger.info(
+            "admin_sync_meta_triggered",
+            extra={
+                "status": result.get("status"),
+                "campaigns_processed": result.get("campaigns_processed", 0),
+                "insights_processed": result.get("insights_processed", 0),
+                "errors": len(result.get("errors", [])),
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.exception("admin_sync_meta_failed", extra={"error": str(exc)})
+        raise HTTPException(status_code=500, detail="manual_sync_failed")
 
 
 if __name__ == "__main__":

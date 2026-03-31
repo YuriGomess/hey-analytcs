@@ -13,10 +13,29 @@ logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler(timezone="UTC")
 
 
-def sync_meta_ads() -> None:
+def sync_meta_ads() -> dict:
     logger.info("sync_meta_ads_started")
     client = MetaAdsClient()
-    campaigns = client.get_campaigns()
+
+    report = {
+        "status": "ok",
+        "campaigns_found": 0,
+        "campaigns_processed": 0,
+        "adsets_processed": 0,
+        "ads_processed": 0,
+        "insights_processed": 0,
+        "errors": [],
+    }
+
+    try:
+        campaigns = client.get_campaigns()
+    except Exception as exc:
+        logger.exception("sync_meta_ads_fetch_campaigns_failed", extra={"error": str(exc)})
+        report["status"] = "error"
+        report["errors"].append({"stage": "get_campaigns", "error": str(exc)})
+        return report
+
+    report["campaigns_found"] = len(campaigns)
     if not campaigns:
         logger.warning(
             "sync_meta_ads_no_campaigns",
@@ -132,6 +151,20 @@ def sync_meta_ads() -> None:
                 "sync_meta_ads_campaign_failed",
                 extra={"campaign_id": campaign_id, "error": str(exc)},
             )
+            report["errors"].append(
+                {
+                    "stage": "campaign",
+                    "campaign_id": campaign_id,
+                    "error": str(exc),
+                }
+            )
+
+    report["campaigns_processed"] = processed_campaigns
+    report["adsets_processed"] = processed_adsets
+    report["ads_processed"] = processed_ads
+    report["insights_processed"] = processed_insight_rows
+    if report["errors"]:
+        report["status"] = "partial_success"
 
     logger.info(
         "sync_meta_ads_finished",
@@ -141,8 +174,10 @@ def sync_meta_ads() -> None:
             "adsets_processed": processed_adsets,
             "ads_processed": processed_ads,
             "insight_rows_processed": processed_insight_rows,
+            "errors": len(report["errors"]),
         },
     )
+    return report
 
 
 def sync_monday() -> None:
