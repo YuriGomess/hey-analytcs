@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hey Analytics | Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1116;
+      --panel: #161a22;
+      --panel-soft: #1d2330;
+      --text: #eef2ff;
+      --muted: #98a3bd;
+      --line: #2a3243;
+      --accent: #17c6a3;
+      --accent-2: #f7b34c;
+      --danger: #f95d6a;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Manrope", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 5% 10%, rgba(23, 198, 163, 0.17), transparent 45%),
+        radial-gradient(circle at 95% 5%, rgba(247, 179, 76, 0.12), transparent 35%),
+        var(--bg);
+    }
+
+    .container {
+      width: min(1400px, 94vw);
+      margin: 28px auto 44px;
+      display: grid;
+      gap: 22px;
+    }
+
+    .title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-family: "Space Grotesk", sans-serif;
+      letter-spacing: 0.3px;
+      font-size: clamp(1.4rem, 3vw, 2.2rem);
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, #171c27 0%, #121722 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      min-height: 108px;
+      animation: rise 0.5s ease both;
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 0.92rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .card .value {
+      margin: 0;
+      font-size: 1.4rem;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      overflow: hidden;
+      animation: rise 0.55s ease both;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .panel h2 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-family: "Space Grotesk", sans-serif;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    select, button {
+      background: var(--panel-soft);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 7px 10px;
+      font: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    button.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(23, 198, 163, 0.25) inset;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1180px;
+    }
+
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #252f42;
+      text-align: left;
+      font-size: 0.87rem;
+      white-space: nowrap;
+    }
+
+    th {
+      color: #c9d2ea;
+      font-weight: 700;
+      cursor: pointer;
+      position: sticky;
+      top: 0;
+      background: #151b27;
+      z-index: 1;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .expand-row td {
+      background: #131926;
+      color: #bcc6de;
+      font-size: 0.84rem;
+      border-bottom: 1px dashed #2d3750;
+    }
+
+    tfoot td {
+      font-weight: 700;
+      background: #121926;
+      border-top: 1px solid #2f3f5a;
+    }
+
+    .badge {
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #1e2738;
+      color: #b7c4e6;
+      font-size: 0.78rem;
+      border: 1px solid #2b3a58;
+    }
+
+    .status-venda { background: rgba(23,198,163,0.2); border-color: rgba(23,198,163,0.45); }
+    .status-reuniao { background: rgba(247,179,76,0.2); border-color: rgba(247,179,76,0.45); }
+    .status-novo { background: rgba(108,122,157,0.2); border-color: rgba(108,122,157,0.45); }
+
+    @keyframes rise {
+      from { transform: translateY(8px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    @media (max-width: 1000px) {
+      .cards { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      .cards { grid-template-columns: 1fr; }
+      .panel { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="title">
+      <div>
+        <h1>Hey Analytics</h1>
+        <div class="small">Funil Meta Ads → Typeform → Monday CRM (30 dias)</div>
+      </div>
+      <span class="small">Auto-refresh: 5 min</span>
+    </section>
+
+    <section class="cards">
+      <article class="card"><h3>Total de leads</h3><p class="value">{{ summaries.total_leads }}</p></article>
+      <article class="card"><h3>Custo total</h3><p class="value">{{ money_brl(summaries.total_spend) }}</p></article>
+      <article class="card"><h3>CPL médio</h3><p class="value">{{ money_brl(summaries.avg_cpl) }}</p></article>
+      <article class="card"><h3>Custo por Form</h3><p class="value">{{ money_brl(summaries.cost_per_form) }}</p></article>
+      <article class="card"><h3>Reuniões agendadas</h3><p class="value">{{ summaries.meetings_scheduled }}</p></article>
+      <article class="card"><h3>Reuniões realizadas</h3><p class="value">{{ summaries.meetings_done }}</p></article>
+      <article class="card"><h3>Vendas</h3><p class="value">{{ summaries.sales }}</p></article>
+      <article class="card"><h3>Taxa LP→Venda geral</h3><p class="value">{{ pct(summaries.lp_to_sale) }}</p></article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Séries de Conversão</h2>
+        <div class="controls">
+          <select id="campaignFilter">
+            <option value="all">Todas campanhas</option>
+            {% for campaign in campaigns %}
+              <option value="{{ campaign.campaign_id }}">{{ campaign.campaign_name }}</option>
+            {% endfor %}
+          </select>
+          <button data-period="7">7d</button>
+          <button data-period="14">14d</button>
+          <button class="active" data-period="30">30d</button>
+          <button class="active" data-series="lp_to_form">LP→Form %</button>
+          <button data-series="lp_to_meeting_scheduled">LP→Reunião Agendada %</button>
+          <button data-series="lp_to_meeting_done">LP→Reunião Realizada %</button>
+          <button data-series="lp_to_sale">LP→Vendas %</button>
+        </div>
+      </div>
+      <canvas id="funnelChart" height="100"></canvas>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Campanhas</h2>
+      </div>
+      <div class="table-wrap">
+        <table id="campaignTable">
+          <thead>
+            <tr>
+              <th>LP</th><th>Impressões</th><th>CPM</th><th>Cliques</th><th>Cliques no Link</th><th>CTR</th><th>CPC</th>
+              <th>Page Views</th><th>Custo/PV</th><th>Connect Rate</th><th>LP→Form %</th><th>Forms</th><th>Respondeu</th>
+              <th>Reunião Agendada</th><th>Reunião Realizada</th><th>Vendas</th><th>CPL</th><th>Custo/Form</th><th>ROAS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in campaigns %}
+              <tr class="campaign-row" data-campaign="{{ c.campaign_id }}">
+                <td>{{ c.lp_url }}</td>
+                <td>{{ c.impressions }}</td>
+                <td>{{ money_brl(c.cpm) }}</td>
+                <td>{{ c.clicks }}</td>
+                <td>{{ c.link_clicks }}</td>
+                <td>{{ pct(c.ctr / 100) }}</td>
+                <td>{{ money_brl(c.cpc) }}</td>
+                <td>{{ c.page_views }}</td>
+                <td>{{ money_brl(c.cost_per_page_view) }}</td>
+                <td>{{ pct(c.connect_rate) }}</td>
+                <td>{{ pct(c.lp_to_form) }}</td>
+                <td>{{ c.forms }}</td>
+                <td>{{ c.responded }}</td>
+                <td>{{ c.meeting_scheduled }}</td>
+                <td>{{ c.meeting_done }}</td>
+                <td>{{ c.sale }}</td>
+                <td>{{ money_brl(c.cpl) }}</td>
+                <td>{{ money_brl(c.cost_per_form) }}</td>
+                <td>{{ c.roas|round(2) }}x</td>
+              </tr>
+              <tr class="expand-row" style="display: none;">
+                <td colspan="19">
+                  {% for child in c.children %}
+                    <strong>Adset:</strong> {{ child.adset_name }} |
+                    <strong>Ad:</strong> {{ child.ad_name }} |
+                    <strong>Forms:</strong> {{ child.forms }} |
+                    <strong>Vendas:</strong> {{ child.sales }} |
+                    <strong>Spend:</strong> {{ money_brl(child.spend) }} |
+                    <strong>LP→Form:</strong> {{ pct(child.lp_to_form) }} |
+                    <strong>LP→Venda:</strong> {{ pct(child.lp_to_sale) }}
+                  {% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Totais</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>{{ totals.page_views|int }}</td>
+              <td>-</td>
+              <td>-</td>
+              <td>{{ pct((totals.leads / totals.page_views) if totals.page_views else 0) }}</td>
+              <td>{{ totals.leads|int }}</td>
+              <td>{{ totals.responded|int }}</td>
+              <td>{{ totals.meeting_scheduled|int }}</td>
+              <td>{{ totals.meeting_done|int }}</td>
+              <td>{{ totals.sale|int }}</td>
+              <td>{{ money_brl((totals.spend / totals.leads) if totals.leads else 0) }}</td>
+              <td>{{ money_brl((totals.spend / totals.leads) if totals.leads else 0) }}</td>
+              <td>{{ ((totals.sale * 1000) / totals.spend)|round(2) if totals.spend else 0 }}x</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Leads Recentes</h2>
+        <div class="controls">
+          <select id="leadCampaignFilter">
+            <option value="all">Todas campanhas</option>
+            {% for campaign in campaigns %}
+              <option value="{{ campaign.campaign_name }}">{{ campaign.campaign_name }}</option>
+            {% endfor %}
+          </select>
+          <select id="leadStatusFilter">
+            <option value="all">Todos status</option>
+            <option value="Novo">Novo</option>
+            <option value="Respondeu">Respondeu</option>
+            <option value="Reunião agendada">Reunião agendada</option>
+            <option value="Reunião realizada">Reunião realizada</option>
+            <option value="Venda">Venda</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="leadsTable" style="min-width: 640px;">
+          <thead><tr><th>Nome</th><th>Campanha</th><th>Data</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for lead in recent_leads %}
+              <tr data-campaign="{{ lead.campaign_name }}" data-status="{{ lead.status }}">
+                <td>{{ lead.name }}</td>
+                <td>{{ lead.campaign_name }}</td>
+                <td>{{ lead.created_at }}</td>
+                <td>
+                  <span class="badge {% if lead.status == 'Venda' %}status-venda{% elif 'Reunião' in lead.status %}status-reuniao{% else %}status-novo{% endif %}">
+                    {{ lead.status }}
+                  </span>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script id="datesData" type="application/json">{{ dates|tojson }}</script>
+  <script id="campaignSeriesData" type="application/json">{{ campaign_series|tojson }}</script>
+
+  <script>
+    const dates = JSON.parse(document.getElementById("datesData").textContent || "[]");
+    const campaignSeries = JSON.parse(document.getElementById("campaignSeriesData").textContent || "[]");
+    let selectedPeriod = 30;
+    let selectedMetric = "lp_to_form";
+
+    const palette = ["#17c6a3", "#f7b34c", "#5ea8ff", "#ff7f51", "#7ce38b", "#b79cff", "#ffcf70"];
+
+    const ctx = document.getElementById("funnelChart");
+    const chart = new Chart(ctx, {
+      type: "line",
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            ticks: {
+              color: "#c4d0e8",
+              callback: (v) => `${Number(v).toFixed(2)}%`
+            },
+            grid: { color: "rgba(196,208,232,0.1)" }
+          },
+          x: {
+            ticks: { color: "#c4d0e8" },
+            grid: { color: "rgba(196,208,232,0.05)" }
+          }
+        },
+        plugins: {
+          legend: { labels: { color: "#eef2ff" } }
+        }
+      }
+    });
+
+    function renderChart() {
+      const campaignFilter = document.getElementById("campaignFilter").value;
+      const labels = dates.slice(-selectedPeriod);
+      const datasets = [];
+
+      let idx = 0;
+      for (const series of campaignSeries) {
+        if (campaignFilter !== "all" && series.campaign_id !== campaignFilter) continue;
+
+        datasets.push({
+          label: `${series.campaign_name} (${selectedMetric.replaceAll("_", " ")})`,
+          data: (series[selectedMetric] || []).slice(-selectedPeriod),
+          borderColor: palette[idx % palette.length],
+          backgroundColor: palette[idx % palette.length],
+          tension: 0.35,
+          pointRadius: 2,
+          borderWidth: 2
+        });
+        idx += 1;
+      }
+
+      chart.data.labels = labels;
+      chart.data.datasets = datasets;
+      chart.update();
+    }
+
+    document.querySelectorAll("button[data-period]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectedPeriod = Number(btn.dataset.period);
+        document.querySelectorAll("button[data-period]").forEach((x) => x.classList.remove("active"));
+        btn.classList.add("active");
+        renderChart();
+      });
+    });
+
+    document.querySelectorAll("button[data-series]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectedMetric = btn.dataset.series;
+        document.querySelectorAll("button[data-series]").forEach((x) => x.classList.remove("active"));
+        btn.classList.add("active");
+        renderChart();
+      });
+    });
+
+    document.getElementById("campaignFilter").addEventListener("change", renderChart);
+
+    const campaignTable = document.getElementById("campaignTable");
+    campaignTable.querySelectorAll("th").forEach((th, index) => {
+      th.addEventListener("click", () => {
+        const tbody = campaignTable.querySelector("tbody");
+        const rowPairs = [];
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        for (let i = 0; i < rows.length; i += 2) {
+          rowPairs.push([rows[i], rows[i + 1]]);
+        }
+
+        rowPairs.sort((a, b) => {
+          const av = a[0].children[index].innerText.replace(/[R$%.x\s.]/g, "").replace(",", ".");
+          const bv = b[0].children[index].innerText.replace(/[R$%.x\s.]/g, "").replace(",", ".");
+          const an = Number(av);
+          const bn = Number(bv);
+          if (!Number.isNaN(an) && !Number.isNaN(bn)) return bn - an;
+          return a[0].children[index].innerText.localeCompare(b[0].children[index].innerText);
+        });
+
+        tbody.innerHTML = "";
+        rowPairs.forEach((pair) => {
+          tbody.appendChild(pair[0]);
+          tbody.appendChild(pair[1]);
+        });
+      });
+    });
+
+    document.querySelectorAll(".campaign-row").forEach((row) => {
+      row.addEventListener("click", () => {
+        const detail = row.nextElementSibling;
+        detail.style.display = detail.style.display === "none" ? "table-row" : "none";
+      });
+    });
+
+    const leadCampaignFilter = document.getElementById("leadCampaignFilter");
+    const leadStatusFilter = document.getElementById("leadStatusFilter");
+
+    function filterLeads() {
+      const c = leadCampaignFilter.value;
+      const s = leadStatusFilter.value;
+      document.querySelectorAll("#leadsTable tbody tr").forEach((row) => {
+        const okCampaign = c === "all" || row.dataset.campaign === c;
+        const okStatus = s === "all" || row.dataset.status === s;
+        row.style.display = (okCampaign && okStatus) ? "table-row" : "none";
+      });
+    }
+
+    leadCampaignFilter.addEventListener("change", filterLeads);
+    leadStatusFilter.addEventListener("change", filterLeads);
+
+    renderChart();
+    setTimeout(() => window.location.reload(), 5 * 60 * 1000);
+  </script>
+</body>
+</html>

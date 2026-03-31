@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+psycopg2-binary
+apscheduler
+jinja2
+python-multipart
+requests
+python-dotenv
