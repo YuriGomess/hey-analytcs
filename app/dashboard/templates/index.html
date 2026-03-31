@@ -124,6 +124,7 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
+      position: relative;
     }
 
     .filter-hint {
@@ -143,21 +144,123 @@
       cursor: pointer;
     }
 
-    select[multiple] {
-      min-width: 250px;
-      min-height: 124px;
-      padding: 8px;
+    .campaign-dropdown {
+      position: relative;
+      min-width: 280px;
     }
 
-    select[multiple] option {
-      padding: 8px 10px;
-      border-radius: 8px;
-      margin: 2px 0;
-    }
-
-    select[multiple] option:checked {
-      background: linear-gradient(180deg, rgba(23, 198, 163, 0.28), rgba(23, 198, 163, 0.16));
+    .campaign-trigger {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: linear-gradient(180deg, rgba(29, 35, 48, 0.98), rgba(20, 26, 37, 0.98));
+      border: 1px solid var(--line);
+      border-radius: 12px;
       color: var(--text);
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.18);
+    }
+
+    .campaign-trigger:hover,
+    .campaign-trigger.is-open {
+      border-color: rgba(23, 198, 163, 0.65);
+      box-shadow: 0 0 0 1px rgba(23, 198, 163, 0.2) inset, 0 16px 26px rgba(0, 0, 0, 0.22);
+    }
+
+    .campaign-trigger-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    .campaign-trigger-icon {
+      flex-shrink: 0;
+      color: var(--muted);
+      transition: transform 0.18s ease;
+    }
+
+    .campaign-trigger.is-open .campaign-trigger-icon {
+      transform: rotate(180deg);
+    }
+
+    .campaign-menu {
+      position: absolute;
+      top: calc(100% + 10px);
+      left: 0;
+      width: 100%;
+      max-height: 320px;
+      overflow-y: auto;
+      padding: 8px;
+      background: rgba(18, 23, 34, 0.98);
+      border: 1px solid rgba(42, 50, 67, 0.95);
+      border-radius: 14px;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+      z-index: 30;
+      display: none;
+      backdrop-filter: blur(10px);
+    }
+
+    .campaign-menu.is-open {
+      display: block;
+    }
+
+    .campaign-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 10px;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.18s ease, border-color 0.18s ease;
+      border: 1px solid transparent;
+    }
+
+    .campaign-option:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(42, 50, 67, 0.95);
+    }
+
+    .campaign-option.is-selected {
+      background: linear-gradient(180deg, rgba(23, 198, 163, 0.18), rgba(23, 198, 163, 0.08));
+      border-color: rgba(23, 198, 163, 0.32);
+    }
+
+    .campaign-option input {
+      margin: 0;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .campaign-option-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.9rem;
+      color: #d9e1f5;
+    }
+
+    .campaign-option-all {
+      margin-bottom: 4px;
+      padding-bottom: 11px;
+      border-bottom: 1px solid rgba(42, 50, 67, 0.9);
+      border-radius: 10px 10px 0 0;
+    }
+
+    .campaign-menu-empty {
+      padding: 12px 10px;
+      color: var(--muted);
+      font-size: 0.85rem;
     }
 
     button.active {
@@ -250,6 +353,7 @@
     @media (max-width: 640px) {
       .cards { grid-template-columns: 1fr; }
       .panel { padding: 12px; }
+      .campaign-dropdown { min-width: 100%; }
     }
   </style>
 </head>
@@ -279,13 +383,28 @@
         <h2>Séries de Conversão</h2>
         <div class="controls">
           <div class="filter-stack">
-            <select id="campaignFilter" multiple>
-              <option value="all" selected>Todas campanhas</option>
-              {% for campaign in campaigns %}
-                <option value="{{ campaign.campaign_id }}">{{ campaign.campaign_name }}</option>
-              {% endfor %}
-            </select>
-            <span class="filter-hint">Use Ctrl ou Shift para combinar campanhas. Se "Todas campanhas" estiver selecionada, o gráfico mostra tudo.</span>
+            <div class="campaign-dropdown" id="campaignDropdown">
+              <button type="button" class="campaign-trigger" id="campaignDropdownTrigger" aria-haspopup="true" aria-expanded="false">
+                <span class="campaign-trigger-label" id="campaignDropdownLabel">Todas campanhas</span>
+                <span class="campaign-trigger-icon">▾</span>
+              </button>
+              <div class="campaign-menu" id="campaignDropdownMenu">
+                <label class="campaign-option campaign-option-all is-selected" data-campaign-option="all" title="Todas campanhas" tabindex="0">
+                  <input type="checkbox" value="all" checked />
+                  <span class="campaign-option-text">Todas campanhas</span>
+                </label>
+                {% for campaign in campaigns %}
+                  <label class="campaign-option" data-campaign-option="{{ campaign.campaign_id }}" title="{{ campaign.campaign_name }}" tabindex="0">
+                    <input type="checkbox" value="{{ campaign.campaign_id }}" />
+                    <span class="campaign-option-text">{{ campaign.campaign_name }}</span>
+                  </label>
+                {% endfor %}
+                {% if not campaigns %}
+                  <div class="campaign-menu-empty">Nenhuma campanha disponível.</div>
+                {% endif %}
+              </div>
+            </div>
+            <span class="filter-hint">Selecione campanhas com clique normal. Se "Todas campanhas" estiver marcada, o gráfico mostra tudo.</span>
           </div>
           <button data-period="7">7d</button>
           <button data-period="14">14d</button>
@@ -433,40 +552,71 @@
     const palette = ["#17c6a3", "#f7b34c", "#5ea8ff", "#ff7f51", "#7ce38b", "#b79cff", "#ffcf70"];
 
     let chart = null;
-    const campaignFilter = document.getElementById("campaignFilter");
+    const campaignDropdown = document.getElementById("campaignDropdown");
+    const campaignDropdownTrigger = document.getElementById("campaignDropdownTrigger");
+    const campaignDropdownLabel = document.getElementById("campaignDropdownLabel");
+    const campaignDropdownMenu = document.getElementById("campaignDropdownMenu");
+    const campaignOptionLabels = Array.from(document.querySelectorAll("[data-campaign-option]"));
+    const campaignOptionInputs = campaignOptionLabels.map((option) => option.querySelector("input"));
+    const allCampaignInput = campaignDropdownMenu.querySelector('input[value="all"]');
 
     function getSelectedCampaignIds() {
-      const selectedValues = Array.from(campaignFilter.selectedOptions).map((option) => option.value);
-      if (!selectedValues.length || selectedValues.includes("all")) {
+      const selectedValues = campaignOptionInputs
+        .filter((input) => input.checked && input.value !== "all")
+        .map((input) => input.value);
+
+      if (!selectedValues.length || allCampaignInput.checked) {
         return [];
       }
+
       return selectedValues;
     }
 
-    function normalizeCampaignSelection(event) {
-      const selectedValues = Array.from(campaignFilter.selectedOptions).map((option) => option.value);
-      const allOption = campaignFilter.querySelector('option[value="all"]');
+    function updateCampaignDropdownVisuals() {
+      const selectedCampaignInputs = campaignOptionInputs.filter((input) => input.checked && input.value !== "all");
 
-      if (!selectedValues.length) {
-        allOption.selected = true;
-        return;
+      campaignOptionLabels.forEach((option) => {
+        const input = option.querySelector("input");
+        option.classList.toggle("is-selected", input.checked);
+      });
+
+      if (allCampaignInput.checked || !selectedCampaignInputs.length) {
+        campaignDropdownLabel.textContent = "Todas campanhas";
+        allCampaignInput.checked = true;
+      } else if (selectedCampaignInputs.length === 1) {
+        const labelText = selectedCampaignInputs[0].closest("label")?.querySelector(".campaign-option-text")?.textContent?.trim();
+        campaignDropdownLabel.textContent = labelText || "1 campanha selecionada";
+      } else {
+        campaignDropdownLabel.textContent = `${selectedCampaignInputs.length} campanhas selecionadas`;
       }
+    }
 
-      if (selectedValues.includes("all") && selectedValues.length > 1) {
-        const targetValue = event?.target?.value;
-        if (targetValue === "all") {
-          Array.from(campaignFilter.options).forEach((option) => {
-            option.selected = option.value === "all";
-          });
-        } else {
-          allOption.selected = false;
+    function closeCampaignDropdown() {
+      campaignDropdownMenu.classList.remove("is-open");
+      campaignDropdownTrigger.classList.remove("is-open");
+      campaignDropdownTrigger.setAttribute("aria-expanded", "false");
+    }
+
+    function toggleCampaignDropdown() {
+      const isOpen = campaignDropdownMenu.classList.toggle("is-open");
+      campaignDropdownTrigger.classList.toggle("is-open", isOpen);
+      campaignDropdownTrigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    }
+
+    function syncCampaignSelection(clickedValue) {
+      if (clickedValue === "all") {
+        campaignOptionInputs.forEach((input) => {
+          input.checked = input.value === "all";
+        });
+      } else {
+        allCampaignInput.checked = false;
+        const hasSpecificCampaign = campaignOptionInputs.some((input) => input.value !== "all" && input.checked);
+        if (!hasSpecificCampaign) {
+          allCampaignInput.checked = true;
         }
       }
 
-      const hasSpecificCampaign = Array.from(campaignFilter.selectedOptions).some((option) => option.value !== "all");
-      if (hasSpecificCampaign) {
-        allOption.selected = false;
-      }
+      updateCampaignDropdownVisuals();
     }
 
     function initChart() {
@@ -495,7 +645,17 @@
             }
           },
           plugins: {
-            legend: { labels: { color: "#eef2ff" } }
+            legend: {
+              position: "bottom",
+              labels: {
+                color: "#eef2ff",
+                boxWidth: 12,
+                boxHeight: 12,
+                usePointStyle: true,
+                pointStyle: "circle",
+                padding: 18
+              }
+            }
           }
         }
       });
@@ -549,10 +709,46 @@
       });
     });
 
-    campaignFilter.addEventListener("change", (event) => {
-      normalizeCampaignSelection(event);
-      renderChart();
+    campaignDropdownTrigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleCampaignDropdown();
     });
+
+    campaignOptionInputs.forEach((input) => {
+      input.addEventListener("change", () => {
+        syncCampaignSelection(input.value);
+        renderChart();
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!campaignDropdown.contains(event.target)) {
+        closeCampaignDropdown();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeCampaignDropdown();
+      }
+    });
+
+    campaignDropdownMenu.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+
+    campaignDropdown.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        const targetOption = event.target.closest("[data-campaign-option]");
+        if (targetOption) {
+          event.preventDefault();
+          const input = targetOption.querySelector("input");
+          input.click();
+        }
+      }
+    });
+
+    updateCampaignDropdownVisuals();
 
     const campaignTable = document.getElementById("campaignTable");
     campaignTable.querySelectorAll("th").forEach((th, index) => {
