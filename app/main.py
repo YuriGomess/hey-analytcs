@@ -149,3 +149,10 @@ def health():
     except Exception as exc:
         logger.exception("health_check_failed", extra={"error": str(exc)})
         raise HTTPException(status_code=500, detail="database_disconnected")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
