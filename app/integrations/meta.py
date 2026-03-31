@@ -2,6 +2,7 @@ import logging
 import os
 from json import dumps
 from datetime import date
+from collections import defaultdict
 from typing import Any
 
 import requests
@@ -52,6 +53,19 @@ class MetaAdsClient:
                         "code": code,
                         "subcode": subcode,
                         "message": message,
+                        "response_text": response.text,
+                        "endpoint": endpoint,
+                    },
+                )
+            else:
+                logger.error(
+                    "meta_api_error",
+                    extra={
+                        "status_code": status_code,
+                        "code": code,
+                        "subcode": subcode,
+                        "message": message,
+                        "response_text": response.text,
                         "endpoint": endpoint,
                     },
                 )
@@ -83,6 +97,19 @@ class MetaAdsClient:
                             "code": error_data.get("code"),
                             "subcode": error_data.get("error_subcode"),
                             "message": error_data.get("message"),
+                            "response_text": response.text,
+                            "endpoint": endpoint,
+                        },
+                    )
+                else:
+                    logger.error(
+                        "meta_api_error",
+                        extra={
+                            "status_code": status_code,
+                            "code": error_data.get("code"),
+                            "subcode": error_data.get("error_subcode"),
+                            "message": error_data.get("message"),
+                            "response_text": response.text,
                             "endpoint": endpoint,
                         },
                     )
@@ -140,34 +167,87 @@ class MetaAdsClient:
             raw_rows = self._get_paginated(
                 f"{campaign_id}/insights",
                 {
-                    "fields": "impressions,cpm,clicks,inline_link_clicks,ctr,cpc,actions,spend",
-                    "time_range": {"since": date_start.isoformat(), "until": date_end.isoformat()},
+                    "fields": "impressions,clicks,inline_link_clicks,ctr,cpc,cpm,spend,actions",
+                    "date_preset": "last_30d",
+                    "level": "ad",
                     "time_increment": 1,
                 },
             )
-            rows = []
+
+            logger.info(
+                "meta_get_insights_response",
+                extra={
+                    "campaign_id": campaign_id,
+                    "date_start": date_start.isoformat(),
+                    "date_end": date_end.isoformat(),
+                    "insights_count": len(raw_rows),
+                },
+            )
+
+            if not raw_rows:
+                logger.warning(
+                    "Meta returned 0 insights",
+                    extra={
+                        "campaign_id": campaign_id,
+                        "date_start": date_start.isoformat(),
+                        "date_end": date_end.isoformat(),
+                    },
+                )
+                return []
+
+            aggregated_by_day: dict[str, dict[str, float]] = defaultdict(
+                lambda: {
+                    "impressions": 0.0,
+                    "clicks": 0.0,
+                    "link_clicks": 0.0,
+                    "page_views": 0.0,
+                    "spend": 0.0,
+                }
+            )
+
             for item in raw_rows:
                 page_views = 0
                 for action in item.get("actions", []):
                     if action.get("action_type") == "landing_page_view":
                         page_views = int(float(action.get("value", 0)))
                         break
+
+                day = item.get("date_start") or item.get("date_stop")
+                if not day:
+                    continue
+
                 link_clicks = int(item.get("inline_link_clicks", 0) or 0)
                 spend = float(item.get("spend", 0) or 0)
+                aggregated = aggregated_by_day[day]
+                aggregated["impressions"] += float(item.get("impressions", 0) or 0)
+                aggregated["clicks"] += float(item.get("clicks", 0) or 0)
+                aggregated["link_clicks"] += float(link_clicks)
+                aggregated["page_views"] += float(page_views)
+                aggregated["spend"] += spend
+
+            rows = []
+            for day, totals in sorted(aggregated_by_day.items()):
+                impressions = int(totals["impressions"])
+                clicks = int(totals["clicks"])
+                link_clicks = int(totals["link_clicks"])
+                page_views = int(totals["page_views"])
+                spend = float(totals["spend"])
+
                 rows.append(
                     {
-                        "date": item.get("date_start"),
-                        "impressions": int(item.get("impressions", 0) or 0),
-                        "cpm": float(item.get("cpm", 0) or 0),
-                        "clicks": int(item.get("clicks", 0) or 0),
+                        "date": day,
+                        "impressions": impressions,
+                        "cpm": ((spend * 1000) / impressions) if impressions else 0.0,
+                        "clicks": clicks,
                         "link_clicks": link_clicks,
-                        "ctr": float(item.get("ctr", 0) or 0),
-                        "cpc": float(item.get("cpc", 0) or 0),
+                        "ctr": ((clicks * 100) / impressions) if impressions else 0.0,
+                        "cpc": (spend / clicks) if clicks else 0.0,
                         "page_views": page_views,
                         "cost_per_page_view": (spend / page_views) if page_views else 0.0,
                         "spend": spend,
                     }
                 )
+
             logger.info(
                 "meta_get_insights_ok",
                 extra={
@@ -175,6 +255,7 @@ class MetaAdsClient:
                     "date_start": date_start.isoformat(),
                     "date_end": date_end.isoformat(),
                     "rows": len(rows),
+                    "raw_rows": len(raw_rows),
                 },
             )
             return rows
