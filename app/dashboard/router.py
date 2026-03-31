@@ -302,6 +302,7 @@ def dashboard(request: Request):
             )
 
         return templates.TemplateResponse(
+            request,
             "index.html",
             {
                 "request": request,
