@@ -17,6 +17,16 @@ def sync_meta_ads() -> None:
     logger.info("sync_meta_ads_started")
     client = MetaAdsClient()
     campaigns = client.get_campaigns()
+    if not campaigns:
+        logger.warning(
+            "sync_meta_ads_no_campaigns",
+            extra={"ad_account_id": client.ad_account_id},
+        )
+
+    processed_campaigns = 0
+    processed_adsets = 0
+    processed_ads = 0
+    processed_insight_rows = 0
 
     for campaign in campaigns:
         campaign_id = campaign.get("id")
@@ -25,16 +35,25 @@ def sync_meta_ads() -> None:
             continue
 
         try:
+            processed_campaigns += 1
+            campaign_adsets = 0
+            campaign_ads = 0
             adsets = client.get_adsets(campaign_id)
             if not adsets:
                 adsets = [{"id": None, "name": None}]
 
             for adset in adsets:
+                if adset.get("id"):
+                    processed_adsets += 1
+                    campaign_adsets += 1
                 ads = client.get_ads(adset.get("id")) if adset.get("id") else []
                 if not ads:
                     ads = [{"id": None, "name": None}]
 
                 for ad in ads:
+                    if ad.get("id"):
+                        processed_ads += 1
+                        campaign_ads += 1
                     with get_db_cursor() as (_, cur):
                         cur.execute(
                             """
@@ -60,6 +79,7 @@ def sync_meta_ads() -> None:
             date_end = date.today()
             date_start = date_end - timedelta(days=29)
             insights = client.get_insights(campaign_id, date_start, date_end)
+            processed_insight_rows += len(insights)
 
             for row in insights:
                 with get_db_cursor() as (_, cur):
@@ -99,7 +119,13 @@ def sync_meta_ads() -> None:
 
             logger.info(
                 "sync_meta_ads_campaign_ok",
-                extra={"campaign_id": campaign_id, "insights_rows": len(insights)},
+                extra={
+                    "campaign_id": campaign_id,
+                    "campaign_name": campaign_name,
+                    "adsets": campaign_adsets,
+                    "ads": campaign_ads,
+                    "insights_rows": len(insights),
+                },
             )
         except Exception as exc:
             logger.exception(
@@ -107,7 +133,16 @@ def sync_meta_ads() -> None:
                 extra={"campaign_id": campaign_id, "error": str(exc)},
             )
 
-    logger.info("sync_meta_ads_finished", extra={"campaigns": len(campaigns)})
+    logger.info(
+        "sync_meta_ads_finished",
+        extra={
+            "campaigns_found": len(campaigns),
+            "campaigns_processed": processed_campaigns,
+            "adsets_processed": processed_adsets,
+            "ads_processed": processed_ads,
+            "insight_rows_processed": processed_insight_rows,
+        },
+    )
 
 
 def sync_monday() -> None:
