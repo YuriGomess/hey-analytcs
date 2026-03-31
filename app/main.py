@@ -188,6 +188,30 @@ def admin_sync_meta(
         raise HTTPException(status_code=500, detail="manual_sync_failed")
 
 
+@app.post("/admin/trigger-sync-meta")
+def trigger_sync_meta():
+    """
+    Dashboard button for manual Meta Ads sync.
+    No header required; only callable from backend.
+    Reutiliza sync_meta_ads() sem duplicação.
+    """
+    try:
+        result = sync_meta_ads()
+        logger.info(
+            "dashboard_sync_meta_triggered",
+            extra={
+                "status": result.get("status"),
+                "campaigns_processed": result.get("campaigns_processed", 0),
+                "insights_processed": result.get("insights_processed", 0),
+                "errors": len(result.get("errors", [])),
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.exception("trigger_sync_meta_failed", extra={"error": str(exc)})
+        return {"status": "error", "error": str(exc), "campaigns_processed": 0, "insights_processed": 0}
+
+
 if __name__ == "__main__":
     import uvicorn
 

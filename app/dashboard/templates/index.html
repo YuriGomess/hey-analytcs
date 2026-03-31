@@ -268,6 +268,49 @@
       box-shadow: 0 0 0 1px rgba(23, 198, 163, 0.25) inset;
     }
 
+    #syncMetaBtn {
+      background: linear-gradient(180deg, rgba(23, 198, 163, 0.15), rgba(23, 198, 163, 0.05));
+      border: 1px solid rgba(23, 198, 163, 0.4);
+      color: var(--accent);
+      font-weight: 600;
+      transition: all 0.18s ease;
+    }
+
+    #syncMetaBtn:hover:not(:disabled) {
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(23, 198, 163, 0.3), 0 0 0 1px rgba(23, 198, 163, 0.2) inset;
+    }
+
+    #syncMetaBtn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .sync-toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(23, 198, 163, 0.15);
+      border: 1px solid rgba(23, 198, 163, 0.4);
+      color: var(--text);
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      z-index: 9999;
+      animation: slideIn 0.3s ease both;
+      max-width: 320px;
+    }
+
+    .sync-toast.error {
+      background: rgba(249, 93, 106, 0.15);
+      border-color: rgba(249, 93, 106, 0.4);
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(400px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
     .table-wrap {
       width: 100%;
       overflow-x: auto;
@@ -413,6 +456,7 @@
           <button data-series="lp_to_meeting_scheduled">LP→Reunião Agendada %</button>
           <button data-series="lp_to_meeting_done">LP→Reunião Realizada %</button>
           <button data-series="lp_to_sale">LP→Vendas %</button>
+          <button id="syncMetaBtn" title="Sincronizar dados do Meta Ads">🔄 Sincronizar Meta</button>
         </div>
       </div>
       <div class="chart-shell">
@@ -807,6 +851,45 @@
       clearTimeout(window.dashboardReloadTimer);
     }
     window.dashboardReloadTimer = setTimeout(() => window.location.reload(), 5 * 60 * 1000);
+
+    // Meta Ads Sync Button
+    const syncMetaBtn = document.getElementById("syncMetaBtn");
+
+    function showSyncToast(message, isError = false) {
+      const toast = document.createElement("div");
+      toast.className = `sync-toast ${isError ? "error" : ""}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 5000);
+    }
+
+    syncMetaBtn.addEventListener("click", async () => {
+      syncMetaBtn.disabled = true;
+      syncMetaBtn.textContent = "⏳ Sincronizando...";
+
+      try {
+        const response = await fetch("/admin/trigger-sync-meta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === "ok") {
+          const msg = `✓ Meta sincronizado: ${data.campaigns_processed} campanhas, ${data.insights_processed} insights`;
+          showSyncToast(msg, false);
+          // Recarregar dashboard após 3 segundos
+          setTimeout(() => window.location.reload(), 3000);
+        } else {
+          showSyncToast(`✗ Erro: ${data.error || "Falha desconhecida"}`, true);
+        }
+      } catch (error) {
+        showSyncToast(`✗ Erro de conexão: ${error.message}`, true);
+      } finally {
+        syncMetaBtn.disabled = false;
+        syncMetaBtn.textContent = "🔄 Sincronizar Meta";
+      }
+    });
   </script>
 </body>
 </html>
