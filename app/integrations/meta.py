@@ -44,7 +44,7 @@ class MetaAdsClient:
             status_code = response.status_code
             code = error_data.get("code")
             subcode = error_data.get("error_subcode")
-            message = error_data.get("message")
+            error_message = error_data.get("message")
             if status_code in (401, 403):
                 logger.error(
                     "meta_auth_or_permission_error",
@@ -52,7 +52,7 @@ class MetaAdsClient:
                         "status_code": status_code,
                         "code": code,
                         "subcode": subcode,
-                        "message": message,
+                        "error_message": error_message,
                         "response_text": response.text,
                         "endpoint": endpoint,
                     },
@@ -64,7 +64,7 @@ class MetaAdsClient:
                         "status_code": status_code,
                         "code": code,
                         "subcode": subcode,
-                        "message": message,
+                        "error_message": error_message,
                         "response_text": response.text,
                         "endpoint": endpoint,
                     },
@@ -96,7 +96,7 @@ class MetaAdsClient:
                             "status_code": status_code,
                             "code": error_data.get("code"),
                             "subcode": error_data.get("error_subcode"),
-                            "message": error_data.get("message"),
+                            "error_message": error_data.get("message"),
                             "response_text": response.text,
                             "endpoint": endpoint,
                         },
@@ -108,7 +108,7 @@ class MetaAdsClient:
                             "status_code": status_code,
                             "code": error_data.get("code"),
                             "subcode": error_data.get("error_subcode"),
-                            "message": error_data.get("message"),
+                            "error_message": error_data.get("message"),
                             "response_text": response.text,
                             "endpoint": endpoint,
                         },
@@ -274,7 +274,7 @@ class MetaAdsClient:
                     extra={
                         "campaign_id": campaign_id,
                         "conversion_action_type": "invitee_event_type_page",
-                        "message": "Meta returned no invitee_event_type_page conversion values",
+                        "detail": "Meta returned no invitee_event_type_page conversion values",
                     },
                 )
 
