@@ -212,6 +212,51 @@ def trigger_sync_meta():
         return {"status": "error", "error": str(exc), "campaigns_processed": 0, "insights_processed": 0}
 
 
+@app.get("/admin/debug-meta-actions")
+def debug_meta_actions():
+    """Temporary debug endpoint: fetch raw action_types from Meta for one campaign."""
+    from datetime import date, timedelta
+    from app.integrations.meta import MetaAdsClient
+
+    try:
+        client = MetaAdsClient()
+        campaigns = client.get_campaigns()
+        if not campaigns:
+            return {"error": "no campaigns found"}
+
+        # Fetch insights for first campaign
+        cid = campaigns[0]["id"]
+        cname = campaigns[0].get("name", "")
+        raw_rows = client._get_paginated(
+            f"{cid}/insights",
+            {
+                "fields": "impressions,clicks,inline_link_clicks,ctr,cpc,cpm,spend,actions",
+                "date_preset": "last_30d",
+                "level": "ad",
+                "time_increment": 1,
+            },
+        )
+
+        all_action_types: set[str] = set()
+        sample_actions: list[dict] = []
+        for row in raw_rows:
+            for action in row.get("actions", []):
+                atype = action.get("action_type", "")
+                all_action_types.add(atype)
+                if len(sample_actions) < 30:
+                    sample_actions.append(action)
+
+        return {
+            "campaign_id": cid,
+            "campaign_name": cname,
+            "raw_insight_rows": len(raw_rows),
+            "all_action_types": sorted(all_action_types),
+            "sample_actions": sample_actions,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 if __name__ == "__main__":
     import uvicorn
 
