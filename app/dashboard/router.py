@@ -43,6 +43,7 @@ def dashboard(request: Request):
                            AVG(ctr) AS ctr,
                            AVG(cpc) AS cpc,
                            SUM(page_views) AS page_views,
+                          SUM(meta_forms) AS meta_forms,
                            AVG(cost_per_page_view) AS cost_per_page_view,
                            SUM(spend) AS spend
                     FROM campaign_metrics
@@ -50,8 +51,7 @@ def dashboard(request: Request):
                     GROUP BY campaign_id
                 ),
                 leads_30d AS (
-                    SELECT campaign_id,
-                           COUNT(*) AS leads,
+                      SELECT l.campaign_id,
                            SUM(CASE WHEN COALESCE(ls.responded, FALSE) THEN 1 ELSE 0 END) AS responded,
                            SUM(CASE WHEN COALESCE(ls.meeting_scheduled, FALSE) THEN 1 ELSE 0 END) AS meeting_scheduled,
                            SUM(CASE WHEN COALESCE(ls.meeting_done, FALSE) THEN 1 ELSE 0 END) AS meeting_done,
@@ -59,7 +59,7 @@ def dashboard(request: Request):
                     FROM leads l
                     LEFT JOIN lead_status ls ON ls.lead_id = l.id
                     WHERE l.created_at >= NOW() - INTERVAL '30 days'
-                    GROUP BY campaign_id
+                      GROUP BY l.campaign_id
                 )
                 SELECT c.campaign_id,
                        c.campaign_name,
@@ -73,9 +73,9 @@ def dashboard(request: Request):
                        COALESCE(m.ctr, 0),
                        COALESCE(m.cpc, 0),
                        COALESCE(m.page_views, 0),
+                       COALESCE(m.meta_forms, 0),
                        COALESCE(m.cost_per_page_view, 0),
                        COALESCE(m.spend, 0),
-                       COALESCE(l.leads, 0),
                        COALESCE(l.responded, 0),
                        COALESCE(l.meeting_scheduled, 0),
                        COALESCE(l.meeting_done, 0),
@@ -91,6 +91,7 @@ def dashboard(request: Request):
             cur.execute(
                 """
                 SELECT campaign_id, date::text, SUM(page_views) AS page_views, SUM(spend) AS spend, SUM(link_clicks) AS link_clicks
+                     , SUM(meta_forms) AS meta_forms
                 FROM campaign_metrics
                 WHERE date >= CURRENT_DATE - INTERVAL '29 days'
                 GROUP BY campaign_id, date
@@ -136,9 +137,9 @@ def dashboard(request: Request):
                 ctr,
                 cpc,
                 page_views,
+                meta_forms,
                 cost_per_page_view,
                 spend,
-                leads,
                 responded,
                 meeting_scheduled,
                 meeting_done,
@@ -146,13 +147,15 @@ def dashboard(request: Request):
             ) = row
 
             connect_rate = safe_div(float(page_views), float(link_clicks))
-            lp_to_form = safe_div(float(leads), float(page_views))
-            cost_per_form = safe_div(float(spend), float(leads))
+            # While Typeform/Monday lead attribution is not fully active,
+            # forms/leads in dashboard come from Meta conversion invitee_event_type_page.
+            lp_to_form = safe_div(float(meta_forms), float(page_views))
+            cost_per_form = safe_div(float(spend), float(meta_forms))
             lp_to_meeting_scheduled = safe_div(float(meeting_scheduled), float(page_views))
             lp_to_meeting_done = safe_div(float(meeting_done), float(page_views))
             lp_to_sale = safe_div(float(sale), float(page_views))
             roas = safe_div(float(sale) * avg_ticket, float(spend))
-            cpl = safe_div(float(spend), float(leads))
+            cpl = safe_div(float(spend), float(meta_forms))
 
             campaign_cards.append(
                 {
@@ -169,7 +172,7 @@ def dashboard(request: Request):
                     "cost_per_page_view": float(cost_per_page_view or 0),
                     "connect_rate": connect_rate,
                     "lp_to_form": lp_to_form,
-                    "forms": int(leads or 0),
+                    "forms": int(meta_forms or 0),
                     "responded": int(responded or 0),
                     "meeting_scheduled": int(meeting_scheduled or 0),
                     "meeting_done": int(meeting_done or 0),
@@ -184,7 +187,7 @@ def dashboard(request: Request):
                         {
                             "adset_name": adset_name or "-",
                             "ad_name": ad_name or "-",
-                            "forms": int(leads or 0),
+                            "forms": int(meta_forms or 0),
                             "sales": int(sale or 0),
                             "spend": float(spend or 0),
                             "lp_to_form": lp_to_form,
@@ -194,7 +197,7 @@ def dashboard(request: Request):
                 }
             )
 
-            totals["leads"] += float(leads or 0)
+            totals["leads"] += float(meta_forms or 0)
             totals["spend"] += float(spend or 0)
             totals["page_views"] += float(page_views or 0)
             totals["meeting_scheduled"] += float(meeting_scheduled or 0)
@@ -215,21 +218,21 @@ def dashboard(request: Request):
 
         campaign_day = defaultdict(lambda: defaultdict(dict))
         date_set = set()
-        for campaign_id, day, page_views, spend, link_clicks in metric_series_rows:
+        for campaign_id, day, page_views, spend, link_clicks, meta_forms in metric_series_rows:
             campaign_day[campaign_id][day] = {
                 "page_views": int(page_views or 0),
                 "spend": float(spend or 0),
                 "link_clicks": int(link_clicks or 0),
+                "meta_forms": int(meta_forms or 0),
             }
             date_set.add(day)
 
-        leads_by_campaign_day = defaultdict(lambda: defaultdict(lambda: {"forms": 0, "meeting_scheduled": 0, "meeting_done": 0, "sale": 0}))
+        leads_by_campaign_day = defaultdict(lambda: defaultdict(lambda: {"meeting_scheduled": 0, "meeting_done": 0, "sale": 0}))
         with get_db_cursor() as (_, cur):
             cur.execute(
                 """
                 SELECT l.campaign_id,
                        DATE(l.created_at)::text AS day,
-                       COUNT(*) AS forms,
                        SUM(CASE WHEN COALESCE(ls.meeting_scheduled, FALSE) THEN 1 ELSE 0 END) AS meeting_scheduled,
                        SUM(CASE WHEN COALESCE(ls.meeting_done, FALSE) THEN 1 ELSE 0 END) AS meeting_done,
                        SUM(CASE WHEN COALESCE(ls.sale, FALSE) THEN 1 ELSE 0 END) AS sale
@@ -239,9 +242,8 @@ def dashboard(request: Request):
                 GROUP BY l.campaign_id, DATE(l.created_at)
                 """
             )
-            for campaign_id, day, forms, ms, md, sale in cur.fetchall():
+            for campaign_id, day, ms, md, sale in cur.fetchall():
                 leads_by_campaign_day[campaign_id][day] = {
-                    "forms": int(forms or 0),
                     "meeting_scheduled": int(ms or 0),
                     "meeting_done": int(md or 0),
                     "sale": int(sale or 0),
@@ -259,7 +261,7 @@ def dashboard(request: Request):
 
             for day in ordered_dates:
                 pv = campaign_day[cid].get(day, {}).get("page_views", 0)
-                forms = leads_by_campaign_day[cid].get(day, {}).get("forms", 0)
+                forms = campaign_day[cid].get(day, {}).get("meta_forms", 0)
                 ms = leads_by_campaign_day[cid].get(day, {}).get("meeting_scheduled", 0)
                 md = leads_by_campaign_day[cid].get(day, {}).get("meeting_done", 0)
                 sale = leads_by_campaign_day[cid].get(day, {}).get("sale", 0)

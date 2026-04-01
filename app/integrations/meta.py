@@ -201,16 +201,24 @@ class MetaAdsClient:
                     "clicks": 0.0,
                     "link_clicks": 0.0,
                     "page_views": 0.0,
+                    "meta_forms": 0.0,
                     "spend": 0.0,
                 }
             )
 
+            rows_without_form_conversion = 0
+
             for item in raw_rows:
                 page_views = 0
+                meta_forms = 0
                 for action in item.get("actions", []):
                     if action.get("action_type") == "landing_page_view":
                         page_views = int(float(action.get("value", 0)))
-                        break
+                    if action.get("action_type") == "invitee_event_type_page":
+                        meta_forms = int(float(action.get("value", 0)))
+
+                if meta_forms == 0:
+                    rows_without_form_conversion += 1
 
                 day = item.get("date_start") or item.get("date_stop")
                 if not day:
@@ -223,6 +231,7 @@ class MetaAdsClient:
                 aggregated["clicks"] += float(item.get("clicks", 0) or 0)
                 aggregated["link_clicks"] += float(link_clicks)
                 aggregated["page_views"] += float(page_views)
+                aggregated["meta_forms"] += float(meta_forms)
                 aggregated["spend"] += spend
 
             rows = []
@@ -231,6 +240,7 @@ class MetaAdsClient:
                 clicks = int(totals["clicks"])
                 link_clicks = int(totals["link_clicks"])
                 page_views = int(totals["page_views"])
+                meta_forms = int(totals["meta_forms"])
                 spend = float(totals["spend"])
 
                 rows.append(
@@ -243,9 +253,29 @@ class MetaAdsClient:
                         "ctr": ((clicks * 100) / impressions) if impressions else 0.0,
                         "cpc": (spend / clicks) if clicks else 0.0,
                         "page_views": page_views,
+                        "meta_forms": meta_forms,
                         "cost_per_page_view": (spend / page_views) if page_views else 0.0,
                         "spend": spend,
                     }
+                )
+
+            total_meta_forms = sum(int(row.get("meta_forms", 0) or 0) for row in rows)
+            logger.info(
+                "meta_get_insights_forms_extracted",
+                extra={
+                    "campaign_id": campaign_id,
+                    "total_meta_forms": total_meta_forms,
+                    "rows_without_form_conversion": rows_without_form_conversion,
+                },
+            )
+            if total_meta_forms == 0:
+                logger.warning(
+                    "meta_form_conversion_missing",
+                    extra={
+                        "campaign_id": campaign_id,
+                        "conversion_action_type": "invitee_event_type_page",
+                        "message": "Meta returned no invitee_event_type_page conversion values",
+                    },
                 )
 
             logger.info(

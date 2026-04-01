@@ -106,9 +106,9 @@ def sync_meta_ads() -> dict:
                         """
                         INSERT INTO campaign_metrics (
                             campaign_id, date, impressions, cpm, clicks, link_clicks, ctr,
-                            cpc, page_views, cost_per_page_view, spend, updated_at
+                            cpc, page_views, meta_forms, cost_per_page_view, spend, updated_at
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                         ON CONFLICT (campaign_id, date) DO UPDATE SET
                             impressions = EXCLUDED.impressions,
                             cpm = EXCLUDED.cpm,
@@ -117,6 +117,7 @@ def sync_meta_ads() -> dict:
                             ctr = EXCLUDED.ctr,
                             cpc = EXCLUDED.cpc,
                             page_views = EXCLUDED.page_views,
+                            meta_forms = EXCLUDED.meta_forms,
                             cost_per_page_view = EXCLUDED.cost_per_page_view,
                             spend = EXCLUDED.spend,
                             updated_at = NOW()
@@ -131,6 +132,7 @@ def sync_meta_ads() -> dict:
                             row.get("ctr", 0),
                             row.get("cpc", 0),
                             row.get("page_views", 0),
+                            row.get("meta_forms", 0),
                             row.get("cost_per_page_view", 0),
                             row.get("spend", 0),
                         ),

@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS campaign_metrics (
     UNIQUE(campaign_id, date)
 );
 
+ALTER TABLE campaign_metrics
+ADD COLUMN IF NOT EXISTS meta_forms INTEGER DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS leads (
     id SERIAL PRIMARY KEY,
     typeform_response_id VARCHAR UNIQUE,
