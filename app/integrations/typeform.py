@@ -69,37 +69,24 @@ def match_campaign(
     if not utm_campaign_normalized:
         return None, None, "no_match"
 
-    # 1. Exact match
+    # 1. Exact match (normalized)
     for c in campaigns:
         c_norm = normalize_campaign_name(c.get("campaign_name", ""))
         if c_norm and c_norm == utm_campaign_normalized:
             return c["campaign_id"], c["campaign_name"], "exact_utm_campaign"
 
-    # 2. Contains (utm inside campaign name or vice-versa)
-    for c in campaigns:
-        c_norm = normalize_campaign_name(c.get("campaign_name", ""))
-        if not c_norm:
-            continue
-        if utm_campaign_normalized in c_norm or c_norm in utm_campaign_normalized:
-            return c["campaign_id"], c["campaign_name"], "fuzzy_utm_campaign"
-
-    # 3. Token overlap >50%
-    utm_tokens = set(utm_campaign_normalized.split())
-    if len(utm_tokens) >= 2:
-        best_match = None
-        best_overlap = 0
+    # 2. Contained match — only when utm is a clear substring of the campaign name
+    #    e.g. utm="captacao cbo frio" matches campaign="CAPTACAO CBO [FRIO]"
+    #    Requires utm to have at least 3 tokens to avoid false positives
+    utm_tokens = utm_campaign_normalized.split()
+    if len(utm_tokens) >= 3:
         for c in campaigns:
             c_norm = normalize_campaign_name(c.get("campaign_name", ""))
-            c_tokens = set(c_norm.split())
-            if not c_tokens:
+            if not c_norm:
                 continue
-            overlap = len(utm_tokens & c_tokens)
-            ratio = overlap / max(len(utm_tokens), len(c_tokens))
-            if ratio > 0.5 and overlap > best_overlap:
-                best_overlap = overlap
-                best_match = c
-        if best_match:
-            return best_match["campaign_id"], best_match["campaign_name"], "fuzzy_utm_campaign"
+            # All utm tokens must appear in the campaign name
+            if all(tok in c_norm for tok in utm_tokens):
+                return c["campaign_id"], c["campaign_name"], "token_match_utm_campaign"
 
     return None, None, "no_match"
 

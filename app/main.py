@@ -9,7 +9,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from app.dashboard.router import router as dashboard_router
 from app.database import close_db_pool, get_db_cursor, init_db
 from app.integrations.monday import MondayClient
-from app.integrations.typeform import parse_response, validate_signature
+from app.integrations.typeform import parse_response, validate_signature, match_campaign, normalize_campaign_name, is_invalid_utm, classify_mql
 from app.scheduler import start_scheduler, stop_scheduler, sync_meta_ads, sync_typeform
 
 logging.basicConfig(
@@ -232,6 +232,75 @@ def trigger_sync_typeform():
         return result
     except Exception as exc:
         logger.exception("trigger_sync_typeform_failed", extra={"error": str(exc)})
+        return {"status": "error", "error": str(exc)}
+
+
+@app.post("/admin/reattribute-leads")
+def reattribute_leads():
+    """
+    Re-run campaign attribution on ALL existing leads using corrected matching logic.
+    Updates campaign_id, campaign_name, campaign_match_status, matched_by.
+    """
+    try:
+        with get_db_cursor() as (conn, cur):
+            # Fetch all active campaigns
+            cur.execute("SELECT campaign_id, campaign_name FROM campaigns")
+            campaigns = [{"campaign_id": r[0], "campaign_name": r[1]} for r in cur.fetchall()]
+
+            # Fetch all leads with their UTM
+            cur.execute("SELECT id, utm_campaign_raw, utm_campaign_normalized FROM leads")
+            all_leads = cur.fetchall()
+
+            updated = 0
+            matched = 0
+            unmatched = 0
+            invalid = 0
+
+            for lead_id, utm_raw, utm_norm in all_leads:
+                # Re-normalize if needed
+                if not utm_norm and utm_raw:
+                    utm_norm = normalize_campaign_name(utm_raw)
+
+                if is_invalid_utm(utm_raw):
+                    cur.execute(
+                        """UPDATE leads SET campaign_id = NULL, campaign_name = NULL,
+                           campaign_match_status = 'unmatched_invalid_utm', matched_by = 'invalid_utm',
+                           utm_campaign_normalized = %s, updated_at = NOW() WHERE id = %s""",
+                        (utm_norm, lead_id),
+                    )
+                    invalid += 1
+                    updated += 1
+                    continue
+
+                cid, cname, matched_by = match_campaign(utm_norm or "", campaigns)
+                if cid:
+                    status = "matched"
+                    matched += 1
+                else:
+                    status = "unmatched_campaign"
+                    unmatched += 1
+
+                cur.execute(
+                    """UPDATE leads SET campaign_id = %s, campaign_name = %s,
+                       campaign_match_status = %s, matched_by = %s,
+                       utm_campaign_normalized = %s, updated_at = NOW() WHERE id = %s""",
+                    (cid, cname, status, matched_by, utm_norm, lead_id),
+                )
+                updated += 1
+
+            conn.commit()
+
+        return {
+            "status": "ok",
+            "total_leads": len(all_leads),
+            "updated": updated,
+            "matched": matched,
+            "unmatched": unmatched,
+            "invalid_utm": invalid,
+            "campaigns_available": len(campaigns),
+        }
+    except Exception as exc:
+        logger.exception("reattribute_leads_failed", extra={"error": str(exc)})
         return {"status": "error", "error": str(exc)}
 
 

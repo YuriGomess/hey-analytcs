@@ -70,7 +70,7 @@ def dashboard(request: Request):
                            SUM(CASE WHEN COALESCE(ls.sale, FALSE) THEN 1 ELSE 0 END) AS sale
                     FROM leads l
                     LEFT JOIN lead_status ls ON ls.lead_id = l.id
-                    WHERE l.created_at >= NOW() - %s * INTERVAL '1 day'
+                    WHERE COALESCE(l.submitted_at, l.created_at) >= NOW() - %s * INTERVAL '1 day'
                     GROUP BY l.campaign_id
                 )
                 SELECT c.campaign_id,
@@ -132,9 +132,11 @@ def dashboard(request: Request):
                 FROM leads l
                 LEFT JOIN campaigns c ON c.campaign_id = l.campaign_id
                 LEFT JOIN lead_status ls ON ls.lead_id = l.id
-                ORDER BY l.created_at DESC
+                WHERE COALESCE(l.submitted_at, l.created_at) >= NOW() - %s * INTERVAL '1 day'
+                ORDER BY COALESCE(l.submitted_at, l.created_at) DESC
                 LIMIT 50
-                """
+                """,
+                (selected_days,),
             )
             recent_leads_rows = cur.fetchall()
 
