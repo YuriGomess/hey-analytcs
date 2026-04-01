@@ -268,7 +268,7 @@
       box-shadow: 0 0 0 1px rgba(23, 198, 163, 0.25) inset;
     }
 
-    #syncMetaBtn {
+    #syncMetaBtn, #syncTypeformBtn {
       background: linear-gradient(180deg, rgba(23, 198, 163, 0.15), rgba(23, 198, 163, 0.05));
       border: 1px solid rgba(23, 198, 163, 0.4);
       color: var(--accent);
@@ -276,12 +276,12 @@
       transition: all 0.18s ease;
     }
 
-    #syncMetaBtn:hover:not(:disabled) {
+    #syncMetaBtn:hover:not(:disabled), #syncTypeformBtn:hover:not(:disabled) {
       border-color: var(--accent);
       box-shadow: 0 0 12px rgba(23, 198, 163, 0.3), 0 0 0 1px rgba(23, 198, 163, 0.2) inset;
     }
 
-    #syncMetaBtn:disabled {
+    #syncMetaBtn:disabled, #syncTypeformBtn:disabled {
       opacity: 0.6;
       cursor: not-allowed;
     }
@@ -416,6 +416,8 @@
       <article class="card"><h3>CPL médio</h3><p class="value">{{ money_brl(summaries.avg_cpl) }}</p></article>
       <article class="card"><h3>MQL (Typeform)</h3><p class="value">{{ summaries.mql }}</p></article>
       <article class="card"><h3>Custo de MQL</h3><p class="value">{{ money_brl(summaries.cost_per_mql) }}</p></article>
+      <article class="card"><h3>Forms (Meta)</h3><p class="value">{{ summaries.meta_forms }}</p></article>
+      <article class="card"><h3>Leads (Typeform)</h3><p class="value">{{ summaries.typeform_leads }}</p></article>
       <article class="card"><h3>Reuniões agendadas</h3><p class="value">{{ summaries.meetings_scheduled }}</p></article>
       <article class="card"><h3>Reuniões realizadas</h3><p class="value">{{ summaries.meetings_done }}</p></article>
       <article class="card"><h3>Vendas</h3><p class="value">{{ summaries.sales }}</p></article>
@@ -458,6 +460,7 @@
           <button data-series="lp_to_meeting_done">LP→Reunião Realizada %</button>
           <button data-series="lp_to_sale">LP→Vendas %</button>
           <button id="syncMetaBtn" title="Sincronizar dados do Meta Ads">🔄 Sincronizar Meta</button>
+          <button id="syncTypeformBtn" title="Sincronizar leads do Typeform">📋 Sincronizar Typeform</button>
         </div>
       </div>
       <div class="chart-shell">
@@ -474,8 +477,10 @@
           <thead>
             <tr>
               <th>LP</th><th>Impressões</th><th>CPM</th><th>Cliques</th><th>Cliques no Link</th><th>CTR</th><th>CPC</th>
-              <th>Page Views</th><th>Custo/PV</th><th>Connect Rate</th><th>LP→Form %</th><th>Forms</th><th>Respondeu</th>
-              <th>Reunião Agendada</th><th>Reunião Realizada</th><th>Vendas</th><th>CPL</th><th>Custo/Form</th><th>ROAS</th>
+              <th>Page Views</th><th>Custo/PV</th><th>Connect Rate</th><th>LP→Form %</th><th>Forms (Meta)</th>
+              <th>Leads (TF)</th><th>LP→Lead %</th><th>MQL</th><th>LP→MQL %</th>
+              <th>Respondeu</th><th>Reunião Ag.</th><th>Reunião Real.</th><th>Vendas</th>
+              <th>CPL</th><th>Custo/Form</th><th>Custo/Lead</th><th>Custo/MQL</th><th>ROAS</th>
             </tr>
           </thead>
           <tbody>
@@ -493,23 +498,32 @@
                 <td>{{ pct(c.connect_rate) }}</td>
                 <td>{{ pct(c.lp_to_form) }}</td>
                 <td>{{ c.forms }}</td>
+                <td>{{ c.typeform_leads }}</td>
+                <td>{{ pct(c.lp_to_lead) }}</td>
+                <td>{{ c.mql }}</td>
+                <td>{{ pct(c.lp_to_mql) }}</td>
                 <td>{{ c.responded }}</td>
                 <td>{{ c.meeting_scheduled }}</td>
                 <td>{{ c.meeting_done }}</td>
                 <td>{{ c.sale }}</td>
                 <td>{{ money_brl(c.cpl) }}</td>
                 <td>{{ money_brl(c.cost_per_form) }}</td>
+                <td>{{ money_brl(c.cost_per_lead) }}</td>
+                <td>{{ money_brl(c.cost_per_mql_camp) }}</td>
                 <td>{{ c.roas|round(2) }}x</td>
               </tr>
               <tr class="expand-row" style="display: none;">
-                <td colspan="19">
+                <td colspan="25">
                   {% for child in c.children %}
                     <strong>Adset:</strong> {{ child.adset_name }} |
                     <strong>Ad:</strong> {{ child.ad_name }} |
                     <strong>Forms:</strong> {{ child.forms }} |
+                    <strong>Leads (TF):</strong> {{ child.typeform_leads }} |
+                    <strong>MQL:</strong> {{ child.mql }} |
                     <strong>Vendas:</strong> {{ child.sales }} |
                     <strong>Spend:</strong> {{ money_brl(child.spend) }} |
                     <strong>LP→Form:</strong> {{ pct(child.lp_to_form) }} |
+                    <strong>LP→Lead:</strong> {{ pct(child.lp_to_lead) }} |
                     <strong>LP→Venda:</strong> {{ pct(child.lp_to_sale) }}
                   {% endfor %}
                 </td>
@@ -528,14 +542,20 @@
               <td>{{ totals.page_views|int }}</td>
               <td>-</td>
               <td>-</td>
-              <td>{{ pct((totals.leads / totals.page_views) if totals.page_views else 0) }}</td>
-              <td>{{ totals.leads|int }}</td>
+              <td>{{ pct((totals.meta_forms / totals.page_views) if totals.page_views else 0) }}</td>
+              <td>{{ totals.meta_forms|int }}</td>
+              <td>{{ totals.typeform_leads|int }}</td>
+              <td>{{ pct((totals.typeform_leads / totals.page_views) if totals.page_views else 0) }}</td>
+              <td>{{ totals.mql|int }}</td>
+              <td>{{ pct((totals.mql / totals.page_views) if totals.page_views else 0) }}</td>
               <td>{{ totals.responded|int }}</td>
               <td>{{ totals.meeting_scheduled|int }}</td>
               <td>{{ totals.meeting_done|int }}</td>
               <td>{{ totals.sale|int }}</td>
-              <td>{{ money_brl((totals.spend / totals.leads) if totals.leads else 0) }}</td>
-              <td>{{ money_brl((totals.spend / totals.leads) if totals.leads else 0) }}</td>
+              <td>{{ money_brl((totals.spend / totals.typeform_leads) if totals.typeform_leads else ((totals.spend / totals.meta_forms) if totals.meta_forms else 0)) }}</td>
+              <td>{{ money_brl((totals.spend / totals.meta_forms) if totals.meta_forms else 0) }}</td>
+              <td>{{ money_brl((totals.spend / totals.typeform_leads) if totals.typeform_leads else 0) }}</td>
+              <td>{{ money_brl((totals.spend / totals.mql) if totals.mql else 0) }}</td>
               <td>{{ ((totals.sale * 1000) / totals.spend)|round(2) if totals.spend else 0 }}x</td>
             </tr>
           </tfoot>
@@ -564,14 +584,22 @@
         </div>
       </div>
       <div class="table-wrap">
-        <table id="leadsTable" style="min-width: 640px;">
-          <thead><tr><th>Nome</th><th>Campanha</th><th>Data</th><th>Status</th></tr></thead>
+        <table id="leadsTable" style="min-width: 740px;">
+          <thead><tr><th>Nome</th><th>Telefone</th><th>Campanha</th><th>Data</th><th>MQL</th><th>Status</th></tr></thead>
           <tbody>
             {% for lead in recent_leads %}
               <tr data-campaign="{{ lead.campaign_name }}" data-status="{{ lead.status }}">
                 <td>{{ lead.name }}</td>
+                <td>{{ lead.phone }}</td>
                 <td>{{ lead.campaign_name }}</td>
                 <td>{{ lead.created_at }}</td>
+                <td>
+                  {% if lead.is_mql %}
+                    <span class="badge status-venda">MQL</span>
+                  {% else %}
+                    <span class="badge">-</span>
+                  {% endif %}
+                </td>
                 <td>
                   <span class="badge {% if lead.status == 'Venda' %}status-venda{% elif 'Reunião' in lead.status %}status-reuniao{% else %}status-novo{% endif %}">
                     {{ lead.status }}
@@ -877,7 +905,6 @@
         if (response.ok && data.status === "ok") {
           const msg = `✓ Meta sincronizado: ${data.campaigns_processed} campanhas, ${data.insights_processed} insights`;
           showSyncToast(msg, false);
-          // Recarregar dashboard após 3 segundos
           setTimeout(() => window.location.reload(), 3000);
         } else {
           showSyncToast(`✗ Erro: ${data.error || "Falha desconhecida"}`, true);
@@ -887,6 +914,38 @@
       } finally {
         syncMetaBtn.disabled = false;
         syncMetaBtn.textContent = "🔄 Sincronizar Meta";
+      }
+    });
+
+    // Typeform Sync Button
+    const syncTypeformBtn = document.getElementById("syncTypeformBtn");
+
+    syncTypeformBtn.addEventListener("click", async () => {
+      syncTypeformBtn.disabled = true;
+      syncTypeformBtn.textContent = "⏳ Sincronizando...";
+
+      try {
+        const response = await fetch("/admin/trigger-sync-typeform", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        const data = await response.json();
+
+        if (response.ok && (data.status === "ok" || data.status === "partial_success")) {
+          const msg = `✓ Typeform sincronizado: ${data.leads_created} novos, ${data.leads_updated} atualizados, ${data.mql_count} MQL`;
+          showSyncToast(msg, false);
+          setTimeout(() => window.location.reload(), 3000);
+        } else if (data.status === "skipped") {
+          showSyncToast("⚠ Typeform não configurado (TYPEFORM_API_TOKEN / TYPEFORM_FORM_ID)", true);
+        } else {
+          showSyncToast(`✗ Erro: ${data.error || "Falha desconhecida"}`, true);
+        }
+      } catch (error) {
+        showSyncToast(`✗ Erro de conexão: ${error.message}`, true);
+      } finally {
+        syncTypeformBtn.disabled = false;
+        syncTypeformBtn.textContent = "📋 Sincronizar Typeform";
       }
     });
   </script>

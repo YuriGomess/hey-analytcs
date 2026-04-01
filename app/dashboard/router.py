@@ -61,7 +61,9 @@ def dashboard(request: Request):
                     GROUP BY campaign_id
                 ),
                 leads_period AS (
-                      SELECT l.campaign_id,
+                    SELECT l.campaign_id,
+                           COUNT(*) AS typeform_leads,
+                           SUM(CASE WHEN COALESCE(l.is_mql, FALSE) THEN 1 ELSE 0 END) AS mql_count,
                            SUM(CASE WHEN COALESCE(ls.responded, FALSE) THEN 1 ELSE 0 END) AS responded,
                            SUM(CASE WHEN COALESCE(ls.meeting_scheduled, FALSE) THEN 1 ELSE 0 END) AS meeting_scheduled,
                            SUM(CASE WHEN COALESCE(ls.meeting_done, FALSE) THEN 1 ELSE 0 END) AS meeting_done,
@@ -69,7 +71,7 @@ def dashboard(request: Request):
                     FROM leads l
                     LEFT JOIN lead_status ls ON ls.lead_id = l.id
                     WHERE l.created_at >= NOW() - %s * INTERVAL '1 day'
-                      GROUP BY l.campaign_id
+                    GROUP BY l.campaign_id
                 )
                 SELECT c.campaign_id,
                        c.campaign_name,
@@ -86,6 +88,8 @@ def dashboard(request: Request):
                        COALESCE(m.meta_forms, 0),
                        COALESCE(m.cost_per_page_view, 0),
                        COALESCE(m.spend, 0),
+                       COALESCE(l.typeform_leads, 0),
+                       COALESCE(l.mql_count, 0),
                        COALESCE(l.responded, 0),
                        COALESCE(l.meeting_scheduled, 0),
                        COALESCE(l.meeting_done, 0),
@@ -116,12 +120,15 @@ def dashboard(request: Request):
                 """
                 SELECT l.id,
                        l.name,
-                       COALESCE(c.campaign_name, l.utm_campaign, 'Sem campanha') AS campaign_name,
+                       COALESCE(l.campaign_name, c.campaign_name, l.utm_campaign, 'Sem campanha') AS campaign_name,
                        l.created_at,
                        COALESCE(ls.responded, FALSE),
                        COALESCE(ls.meeting_scheduled, FALSE),
                        COALESCE(ls.meeting_done, FALSE),
-                       COALESCE(ls.sale, FALSE)
+                       COALESCE(ls.sale, FALSE),
+                       COALESCE(l.is_mql, FALSE),
+                       l.campaign_match_status,
+                       l.phone
                 FROM leads l
                 LEFT JOIN campaigns c ON c.campaign_id = l.campaign_id
                 LEFT JOIN lead_status ls ON ls.lead_id = l.id
@@ -152,6 +159,8 @@ def dashboard(request: Request):
                 meta_forms,
                 cost_per_page_view,
                 spend,
+                typeform_leads,
+                mql_count,
                 responded,
                 meeting_scheduled,
                 meeting_done,
@@ -159,15 +168,20 @@ def dashboard(request: Request):
             ) = row
 
             connect_rate = safe_div(float(page_views), float(link_clicks))
-            # While Typeform/Monday lead attribution is not fully active,
-            # forms/leads in dashboard come from Meta conversion invitee_event_type_page.
+            # Forms come from Meta (invitee_event_type_page conversion)
             lp_to_form = safe_div(float(meta_forms), float(page_views))
             cost_per_form = safe_div(float(spend), float(meta_forms))
+            # Leads come from Typeform (matched by utm_campaign)
+            lp_to_lead = safe_div(float(typeform_leads), float(page_views))
+            cost_per_lead = safe_div(float(spend), float(typeform_leads))
+            # MQL come from Typeform (classified by form answers)
+            lp_to_mql = safe_div(float(mql_count), float(page_views))
+            cost_per_mql = safe_div(float(spend), float(mql_count))
             lp_to_meeting_scheduled = safe_div(float(meeting_scheduled), float(page_views))
             lp_to_meeting_done = safe_div(float(meeting_done), float(page_views))
             lp_to_sale = safe_div(float(sale), float(page_views))
             roas = safe_div(float(sale) * avg_ticket, float(spend))
-            cpl = safe_div(float(spend), float(meta_forms))
+            cpl = safe_div(float(spend), float(typeform_leads)) if typeform_leads else safe_div(float(spend), float(meta_forms))
 
             campaign_cards.append(
                 {
@@ -185,6 +199,12 @@ def dashboard(request: Request):
                     "connect_rate": connect_rate,
                     "lp_to_form": lp_to_form,
                     "forms": int(meta_forms or 0),
+                    "typeform_leads": int(typeform_leads or 0),
+                    "mql": int(mql_count or 0),
+                    "lp_to_lead": lp_to_lead,
+                    "lp_to_mql": lp_to_mql,
+                    "cost_per_lead": cost_per_lead,
+                    "cost_per_mql_camp": cost_per_mql,
                     "responded": int(responded or 0),
                     "meeting_scheduled": int(meeting_scheduled or 0),
                     "meeting_done": int(meeting_done or 0),
@@ -200,16 +220,21 @@ def dashboard(request: Request):
                             "adset_name": adset_name or "-",
                             "ad_name": ad_name or "-",
                             "forms": int(meta_forms or 0),
+                            "typeform_leads": int(typeform_leads or 0),
+                            "mql": int(mql_count or 0),
                             "sales": int(sale or 0),
                             "spend": float(spend or 0),
                             "lp_to_form": lp_to_form,
+                            "lp_to_lead": lp_to_lead,
                             "lp_to_sale": lp_to_sale,
                         }
                     ],
                 }
             )
 
-            totals["leads"] += float(meta_forms or 0)
+            totals["meta_forms"] += float(meta_forms or 0)
+            totals["typeform_leads"] += float(typeform_leads or 0)
+            totals["mql"] += float(mql_count or 0)
             totals["spend"] += float(spend or 0)
             totals["page_views"] += float(page_views or 0)
             totals["meeting_scheduled"] += float(meeting_scheduled or 0)
@@ -217,22 +242,19 @@ def dashboard(request: Request):
             totals["sale"] += float(sale or 0)
             totals["responded"] += float(responded or 0)
 
-        # MQL = leads qualificados vindos do Typeform (tabela leads)
-        mql_count = 0
-        with get_db_cursor() as (_, cur):
-            cur.execute(
-                "SELECT COUNT(*) FROM leads WHERE created_at >= NOW() - %s * INTERVAL '1 day'",
-                (selected_days,),
-            )
-            row = cur.fetchone()
-            mql_count = int(row[0]) if row else 0
+        # Summaries use Typeform leads as primary lead count.
+        # If no Typeform leads yet, fall back to Meta forms.
+        total_leads = int(totals["typeform_leads"]) if totals["typeform_leads"] else int(totals["meta_forms"])
+        total_mql = int(totals["mql"])
 
         summaries = {
-            "total_leads": int(totals["leads"]),
+            "total_leads": total_leads,
             "total_spend": totals["spend"],
-            "avg_cpl": safe_div(totals["spend"], totals["leads"]),
-            "mql": mql_count,
-            "cost_per_mql": safe_div(totals["spend"], mql_count),
+            "avg_cpl": safe_div(totals["spend"], total_leads),
+            "mql": total_mql,
+            "cost_per_mql": safe_div(totals["spend"], total_mql),
+            "meta_forms": int(totals["meta_forms"]),
+            "typeform_leads": int(totals["typeform_leads"]),
             "meetings_scheduled": int(totals["meeting_scheduled"]),
             "meetings_done": int(totals["meeting_done"]),
             "sales": int(totals["sale"]),
@@ -306,7 +328,7 @@ def dashboard(request: Request):
             )
 
         recent_leads = []
-        for lead_id, name, campaign_name, created_at, responded, meeting_scheduled, meeting_done, sale in recent_leads_rows:
+        for lead_id, name, campaign_name, created_at, responded, meeting_scheduled, meeting_done, sale, is_mql, match_status, phone in recent_leads_rows:
             status = "Novo"
             if sale:
                 status = "Venda"
@@ -321,9 +343,12 @@ def dashboard(request: Request):
                 {
                     "id": lead_id,
                     "name": name or "-",
+                    "phone": phone or "-",
                     "campaign_name": campaign_name or "Sem campanha",
                     "created_at": created_at.strftime("%d/%m/%Y %H:%M") if isinstance(created_at, datetime) else "-",
                     "status": status,
+                    "is_mql": bool(is_mql),
+                    "match_status": match_status or "-",
                 }
             )
 

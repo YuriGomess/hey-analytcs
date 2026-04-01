@@ -10,7 +10,7 @@ from app.dashboard.router import router as dashboard_router
 from app.database import close_db_pool, get_db_cursor, init_db
 from app.integrations.monday import MondayClient
 from app.integrations.typeform import parse_response, validate_signature
-from app.scheduler import start_scheduler, stop_scheduler, sync_meta_ads
+from app.scheduler import start_scheduler, stop_scheduler, sync_meta_ads, sync_typeform
 
 logging.basicConfig(
     level=logging.INFO,
@@ -210,6 +210,29 @@ def trigger_sync_meta():
     except Exception as exc:
         logger.exception("trigger_sync_meta_failed", extra={"error": str(exc)})
         return {"status": "error", "error": str(exc), "campaigns_processed": 0, "insights_processed": 0}
+
+
+@app.post("/admin/trigger-sync-typeform")
+def trigger_sync_typeform():
+    """
+    Dashboard button for manual Typeform sync.
+    Reutiliza sync_typeform() do scheduler.
+    """
+    try:
+        result = sync_typeform()
+        logger.info(
+            "dashboard_sync_typeform_triggered",
+            extra={
+                "status": result.get("status"),
+                "leads_created": result.get("leads_created", 0),
+                "mql_count": result.get("mql_count", 0),
+                "errors": len(result.get("errors", [])),
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.exception("trigger_sync_typeform_failed", extra={"error": str(exc)})
+        return {"status": "error", "error": str(exc)}
 
 
 @app.get("/admin/debug-meta-actions")

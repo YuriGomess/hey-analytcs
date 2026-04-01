@@ -1,12 +1,21 @@
+import json
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.database import get_db_cursor
 from app.integrations.meta import MetaAdsClient
 from app.integrations.monday import MondayClient
+from app.integrations.typeform import (
+    TypeformClient,
+    classify_mql,
+    is_invalid_utm,
+    match_campaign,
+    normalize_campaign_name,
+    parse_api_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -271,10 +280,227 @@ def sync_monday() -> None:
     logger.info("sync_monday_finished", extra={"items": len(items)})
 
 
+def sync_typeform() -> dict:
+    """Sync leads from Typeform API, match to campaigns, classify MQL."""
+    logger.info("typeform_sync_started")
+
+    report = {
+        "status": "ok",
+        "responses_found": 0,
+        "leads_created": 0,
+        "leads_updated": 0,
+        "campaigns_matched": 0,
+        "campaigns_unmatched": 0,
+        "invalid_utm": 0,
+        "mql_count": 0,
+        "errors": [],
+    }
+
+    client = TypeformClient()
+    if not client.api_token or not client.form_id:
+        report["status"] = "skipped"
+        report["errors"].append({"stage": "config", "error": "TYPEFORM_API_TOKEN or TYPEFORM_FORM_ID not configured"})
+        logger.warning("typeform_sync_skipped_missing_config")
+        return report
+
+    try:
+        # Determine 'since' cursor from last synced response (with 2h buffer)
+        since: str | None = None
+        with get_db_cursor() as (_, cur):
+            cur.execute("""
+                SELECT MAX(form_completed_at) FROM leads
+                WHERE source IN ('typeform_api', 'webhook')
+            """)
+            row = cur.fetchone()
+            if row and row[0]:
+                buffer_time = row[0] - timedelta(hours=2)
+                since_str = buffer_time.isoformat()
+                if "Z" not in since_str and "+" not in since_str:
+                    since_str += "Z"
+                since = since_str
+
+        form_title = client.get_form_title()
+        responses = client.fetch_responses(since=since)
+        report["responses_found"] = len(responses)
+
+        logger.info("typeform_sync_responses_found", extra={
+            "responses_found": len(responses),
+            "completed_responses_found": len(responses),
+            "since": since,
+        })
+
+        if not responses:
+            logger.info("typeform_sync_no_new_responses")
+            return report
+
+        # Load campaigns for matching
+        campaigns: list[dict[str, str]] = []
+        with get_db_cursor() as (_, cur):
+            cur.execute("SELECT campaign_id, campaign_name FROM campaigns")
+            campaigns = [{"campaign_id": r[0], "campaign_name": r[1]} for r in cur.fetchall()]
+
+        for item in responses:
+            try:
+                parsed = parse_api_response(item, form_id=client.form_id, form_name=form_title)
+
+                # Campaign attribution
+                utm_raw = parsed["utm_campaign_raw"]
+                utm_norm = parsed["utm_campaign_normalized"]
+                campaign_id: str | None = None
+                campaign_name_matched: str | None = None
+                match_status = "no_match"
+                matched_by = "no_match"
+
+                if is_invalid_utm(utm_raw):
+                    match_status = "unmatched_invalid_utm"
+                    matched_by = "invalid_utm"
+                    report["invalid_utm"] += 1
+                elif utm_norm:
+                    campaign_id, campaign_name_matched, matched_by = match_campaign(utm_norm, campaigns)
+                    if campaign_id:
+                        match_status = "matched"
+                        report["campaigns_matched"] += 1
+                    else:
+                        match_status = "unmatched_campaign"
+                        report["campaigns_unmatched"] += 1
+
+                # MQL classification
+                is_mql, mql_reason = classify_mql(parsed)
+                if is_mql:
+                    report["mql_count"] += 1
+
+                # Upsert lead
+                with get_db_cursor() as (_, cur):
+                    cur.execute("""
+                        INSERT INTO leads (
+                            typeform_response_id, source, form_id, form_name,
+                            response_token, response_type,
+                            email, phone, name, instagram,
+                            business_area, revenue_range, paid_traffic_fit,
+                            already_runs_paid_traffic, sales_challenge,
+                            urgency_stage, best_contact_time,
+                            utm_source, utm_medium, utm_campaign,
+                            utm_campaign_raw, utm_campaign_normalized, utm_term,
+                            form_completed_at, landed_at,
+                            campaign_id, campaign_name, campaign_match_status, matched_by,
+                            is_mql, mql_reason,
+                            raw_data, updated_at
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s,
+                            %s::jsonb, NOW()
+                        )
+                        ON CONFLICT (typeform_response_id) DO UPDATE SET
+                            source = EXCLUDED.source,
+                            form_id = EXCLUDED.form_id,
+                            form_name = EXCLUDED.form_name,
+                            response_token = EXCLUDED.response_token,
+                            email = COALESCE(EXCLUDED.email, leads.email),
+                            phone = COALESCE(EXCLUDED.phone, leads.phone),
+                            name = COALESCE(EXCLUDED.name, leads.name),
+                            instagram = COALESCE(EXCLUDED.instagram, leads.instagram),
+                            business_area = COALESCE(EXCLUDED.business_area, leads.business_area),
+                            revenue_range = COALESCE(EXCLUDED.revenue_range, leads.revenue_range),
+                            paid_traffic_fit = COALESCE(EXCLUDED.paid_traffic_fit, leads.paid_traffic_fit),
+                            already_runs_paid_traffic = COALESCE(EXCLUDED.already_runs_paid_traffic, leads.already_runs_paid_traffic),
+                            sales_challenge = COALESCE(EXCLUDED.sales_challenge, leads.sales_challenge),
+                            urgency_stage = COALESCE(EXCLUDED.urgency_stage, leads.urgency_stage),
+                            best_contact_time = COALESCE(EXCLUDED.best_contact_time, leads.best_contact_time),
+                            utm_campaign_raw = EXCLUDED.utm_campaign_raw,
+                            utm_campaign_normalized = EXCLUDED.utm_campaign_normalized,
+                            utm_term = EXCLUDED.utm_term,
+                            campaign_id = EXCLUDED.campaign_id,
+                            campaign_name = EXCLUDED.campaign_name,
+                            campaign_match_status = EXCLUDED.campaign_match_status,
+                            matched_by = EXCLUDED.matched_by,
+                            is_mql = EXCLUDED.is_mql,
+                            mql_reason = EXCLUDED.mql_reason,
+                            raw_data = EXCLUDED.raw_data,
+                            updated_at = NOW()
+                        RETURNING id, (xmax = 0) AS is_new
+                    """, (
+                        parsed["response_token"] or parsed["response_id"],
+                        parsed["source"],
+                        parsed["form_id"],
+                        parsed["form_name"],
+                        parsed["response_token"],
+                        parsed["response_type"],
+                        parsed.get("email"),
+                        parsed["phone"],
+                        parsed["name"],
+                        parsed["instagram"],
+                        parsed["business_area"],
+                        parsed["revenue_range"],
+                        parsed["paid_traffic_fit"],
+                        parsed["already_runs_paid_traffic"],
+                        parsed["sales_challenge"],
+                        parsed["urgency_stage"],
+                        parsed["best_contact_time"],
+                        parsed["utm_source"],
+                        parsed["utm_medium"],
+                        parsed["utm_campaign_raw"],
+                        parsed["utm_campaign_raw"],
+                        parsed["utm_campaign_normalized"],
+                        parsed["utm_term"],
+                        parsed["submitted_at"],
+                        parsed["landed_at"],
+                        campaign_id,
+                        campaign_name_matched,
+                        match_status,
+                        matched_by,
+                        is_mql,
+                        mql_reason,
+                        json.dumps(parsed["raw_payload"]),
+                    ))
+                    result_row = cur.fetchone()
+                    if result_row and result_row[1]:  # is_new = True (INSERT)
+                        report["leads_created"] += 1
+                    else:
+                        report["leads_updated"] += 1
+
+            except Exception as exc:
+                logger.exception("typeform_sync_response_failed", extra={
+                    "token": item.get("token", "?"),
+                    "error": str(exc),
+                })
+                report["errors"].append({
+                    "stage": "process_response",
+                    "token": item.get("token", "?"),
+                    "error": str(exc),
+                })
+
+    except Exception as exc:
+        logger.exception("typeform_sync_failed", extra={"error": str(exc)})
+        report["status"] = "error"
+        report["errors"].append({"stage": "fetch_responses", "error": str(exc)})
+
+    if report["errors"] and report["status"] == "ok":
+        report["status"] = "partial_success"
+
+    logger.info("typeform_sync_finished", extra={
+        "responses_found": report["responses_found"],
+        "leads_created": report["leads_created"],
+        "leads_updated": report["leads_updated"],
+        "campaigns_matched": report["campaigns_matched"],
+        "campaigns_unmatched": report["campaigns_unmatched"],
+        "invalid_utm": report["invalid_utm"],
+        "mql_count": report["mql_count"],
+        "errors_count": len(report["errors"]),
+    })
+
+    return report
+
+
 def start_scheduler() -> None:
     if scheduler.running:
         return
     scheduler.add_job(sync_meta_ads, "interval", hours=1, id="sync_meta_ads", replace_existing=True)
+    scheduler.add_job(sync_typeform, "interval", minutes=15, id="sync_typeform", replace_existing=True)
     scheduler.add_job(sync_monday, "interval", minutes=30, id="sync_monday", replace_existing=True)
     scheduler.start()
     logger.info("scheduler_started")
