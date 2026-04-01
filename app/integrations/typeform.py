@@ -416,12 +416,14 @@ class TypeformClient:
             params: dict[str, Any] = {
                 "page_size": page_size,
                 "completed": str(completed).lower(),
-                "sort": "submitted_at,asc",
             }
             if since:
                 params["since"] = since
+            # Typeform API does not support 'sort' together with 'after'
             if after:
                 params["after"] = after
+            else:
+                params["sort"] = "submitted_at,asc"
 
             try:
                 resp = requests.get(url, headers=self._headers(), params=params, timeout=30)
@@ -433,12 +435,13 @@ class TypeformClient:
                         "status_code": resp.status_code,
                         "response_text": resp.text[:500],
                         "form_id": self.form_id,
+                        "params_sent": {k: v for k, v in params.items()},
                     },
                 )
-                raise
+                break  # return what we have so far instead of crashing
             except requests.RequestException as exc:
-                logger.error("typeform_api_connection_error", extra={"error": str(exc)})
-                raise
+                logger.error("typeform_api_connection_error", extra={"error_detail": str(exc)})
+                break
 
             data = resp.json()
             items = data.get("items", [])
