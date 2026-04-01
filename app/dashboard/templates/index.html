@@ -405,7 +405,7 @@
     <section class="title">
       <div>
         <h1>Hey Analytics</h1>
-        <div class="small">Funil Meta Ads → Typeform → Monday CRM (30 dias)</div>
+        <div class="small">Funil Meta Ads → Typeform → Monday CRM ({{ selected_days }} dias)</div>
       </div>
       <span class="small">Auto-refresh: 5 min</span>
     </section>
@@ -449,9 +449,9 @@
             </div>
             <span class="filter-hint">Selecione campanhas com clique normal. Se "Todas campanhas" estiver marcada, o gráfico mostra tudo.</span>
           </div>
-          <button data-period="7">7d</button>
-          <button data-period="14">14d</button>
-          <button class="active" data-period="30">30d</button>
+          <button data-period="7" {% if selected_days == 7 %}class="active"{% endif %}>7d</button>
+          <button data-period="14" {% if selected_days == 14 %}class="active"{% endif %}>14d</button>
+          <button data-period="30" {% if selected_days == 30 %}class="active"{% endif %}>30d</button>
           <button class="active" data-series="lp_to_form">LP→Form %</button>
           <button data-series="lp_to_meeting_scheduled">LP→Reunião Agendada %</button>
           <button data-series="lp_to_meeting_done">LP→Reunião Realizada %</button>
@@ -590,7 +590,6 @@
   <script>
     const dates = JSON.parse(document.getElementById("datesData").textContent || "[]");
     const campaignSeries = JSON.parse(document.getElementById("campaignSeriesData").textContent || "[]");
-    let selectedPeriod = 30;
     let selectedMetric = "lp_to_form";
 
     const palette = ["#17c6a3", "#f7b34c", "#5ea8ff", "#ff7f51", "#7ce38b", "#b79cff", "#ffcf70"];
@@ -711,7 +710,7 @@
       }
 
       const selectedCampaignIds = getSelectedCampaignIds();
-      const labels = dates.slice(-selectedPeriod);
+      const labels = dates;
       const datasets = [];
 
       let idx = 0;
@@ -720,7 +719,7 @@
 
         datasets.push({
           label: `${series.campaign_name} (${selectedMetric.replaceAll("_", " ")})`,
-          data: (series[selectedMetric] || []).slice(-selectedPeriod),
+          data: series[selectedMetric] || [],
           borderColor: palette[idx % palette.length],
           backgroundColor: palette[idx % palette.length],
           tension: 0.35,
@@ -735,12 +734,11 @@
       chart.update();
     }
 
+    // Period buttons: reload page with ?days=X so ALL metrics update
     document.querySelectorAll("button[data-period]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        selectedPeriod = Number(btn.dataset.period);
-        document.querySelectorAll("button[data-period]").forEach((x) => x.classList.remove("active"));
-        btn.classList.add("active");
-        renderChart();
+        const days = btn.dataset.period;
+        window.location.href = `/?days=${days}`;
       });
     });
 

@@ -207,15 +207,20 @@ class MetaAdsClient:
             )
 
             rows_without_form_conversion = 0
+            seen_action_types: set[str] = set()
 
             for item in raw_rows:
                 page_views = 0
                 meta_forms = 0
                 for action in item.get("actions", []):
-                    if action.get("action_type") == "landing_page_view":
+                    atype = (action.get("action_type") or "").lower()
+                    seen_action_types.add(atype)
+                    if atype == "landing_page_view":
                         page_views = int(float(action.get("value", 0)))
-                    if action.get("action_type") == "invitee_event_type_page":
-                        meta_forms = int(float(action.get("value", 0)))
+                    # Calendly/custom conversions may appear with prefixes like
+                    # offsite_conversion.fb_pixel_custom.invitee_event_type_page
+                    if "invitee_event_type_page" in atype:
+                        meta_forms += int(float(action.get("value", 0)))
 
                 if meta_forms == 0:
                     rows_without_form_conversion += 1
@@ -266,6 +271,7 @@ class MetaAdsClient:
                     "campaign_id": campaign_id,
                     "total_meta_forms": total_meta_forms,
                     "rows_without_form_conversion": rows_without_form_conversion,
+                    "all_action_types_seen": sorted(seen_action_types),
                 },
             )
             if total_meta_forms == 0:
@@ -274,7 +280,8 @@ class MetaAdsClient:
                     extra={
                         "campaign_id": campaign_id,
                         "conversion_action_type": "invitee_event_type_page",
-                        "detail": "Meta returned no invitee_event_type_page conversion values",
+                        "detail": "No action_type containing invitee_event_type_page was found",
+                        "available_action_types": sorted(seen_action_types),
                     },
                 )
 

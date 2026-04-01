@@ -30,11 +30,21 @@ def pct(value: float) -> str:
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
+    # Accept ?days=7|14|30 to control period for ALL metrics (cards, table, chart)
+    raw_days = request.query_params.get("days", "30")
+    try:
+        selected_days = int(raw_days)
+    except (ValueError, TypeError):
+        selected_days = 30
+    if selected_days not in (7, 14, 30):
+        selected_days = 30
+    interval_days = selected_days - 1  # e.g. 30 days = today minus 29
+
     try:
         with get_db_cursor() as (_, cur):
             cur.execute(
                 """
-                WITH metrics_30d AS (
+                WITH metrics_period AS (
                     SELECT campaign_id,
                            SUM(impressions) AS impressions,
                            AVG(cpm) AS cpm,
@@ -43,14 +53,14 @@ def dashboard(request: Request):
                            AVG(ctr) AS ctr,
                            AVG(cpc) AS cpc,
                            SUM(page_views) AS page_views,
-                          SUM(meta_forms) AS meta_forms,
+                           SUM(meta_forms) AS meta_forms,
                            AVG(cost_per_page_view) AS cost_per_page_view,
                            SUM(spend) AS spend
                     FROM campaign_metrics
-                    WHERE date >= CURRENT_DATE - INTERVAL '29 days'
+                    WHERE date >= CURRENT_DATE - %s * INTERVAL '1 day'
                     GROUP BY campaign_id
                 ),
-                leads_30d AS (
+                leads_period AS (
                       SELECT l.campaign_id,
                            SUM(CASE WHEN COALESCE(ls.responded, FALSE) THEN 1 ELSE 0 END) AS responded,
                            SUM(CASE WHEN COALESCE(ls.meeting_scheduled, FALSE) THEN 1 ELSE 0 END) AS meeting_scheduled,
@@ -58,7 +68,7 @@ def dashboard(request: Request):
                            SUM(CASE WHEN COALESCE(ls.sale, FALSE) THEN 1 ELSE 0 END) AS sale
                     FROM leads l
                     LEFT JOIN lead_status ls ON ls.lead_id = l.id
-                    WHERE l.created_at >= NOW() - INTERVAL '30 days'
+                    WHERE l.created_at >= NOW() - %s * INTERVAL '1 day'
                       GROUP BY l.campaign_id
                 )
                 SELECT c.campaign_id,
@@ -81,10 +91,11 @@ def dashboard(request: Request):
                        COALESCE(l.meeting_done, 0),
                        COALESCE(l.sale, 0)
                 FROM campaigns c
-                LEFT JOIN metrics_30d m ON m.campaign_id = c.campaign_id
-                LEFT JOIN leads_30d l ON l.campaign_id = c.campaign_id
+                LEFT JOIN metrics_period m ON m.campaign_id = c.campaign_id
+                LEFT JOIN leads_period l ON l.campaign_id = c.campaign_id
                 ORDER BY COALESCE(m.spend, 0) DESC, c.campaign_name ASC
-                """
+                """,
+                (interval_days, selected_days),
             )
             campaign_rows = cur.fetchall()
 
@@ -93,10 +104,11 @@ def dashboard(request: Request):
                 SELECT campaign_id, date::text, SUM(page_views) AS page_views, SUM(spend) AS spend, SUM(link_clicks) AS link_clicks
                      , SUM(meta_forms) AS meta_forms
                 FROM campaign_metrics
-                WHERE date >= CURRENT_DATE - INTERVAL '29 days'
+                WHERE date >= CURRENT_DATE - %s * INTERVAL '1 day'
                 GROUP BY campaign_id, date
                 ORDER BY date ASC
-                """
+                """,
+                (interval_days,),
             )
             metric_series_rows = cur.fetchall()
 
@@ -238,9 +250,10 @@ def dashboard(request: Request):
                        SUM(CASE WHEN COALESCE(ls.sale, FALSE) THEN 1 ELSE 0 END) AS sale
                 FROM leads l
                 LEFT JOIN lead_status ls ON ls.lead_id = l.id
-                WHERE l.created_at >= NOW() - INTERVAL '30 days'
+                WHERE l.created_at >= NOW() - %s * INTERVAL '1 day'
                 GROUP BY l.campaign_id, DATE(l.created_at)
-                """
+                """,
+                (selected_days,),
             )
             for campaign_id, day, ms, md, sale in cur.fetchall():
                 leads_by_campaign_day[campaign_id][day] = {
@@ -316,6 +329,7 @@ def dashboard(request: Request):
                 "money_brl": money_brl,
                 "pct": pct,
                 "totals": totals,
+                "selected_days": selected_days,
             },
         )
     except Exception as exc:
