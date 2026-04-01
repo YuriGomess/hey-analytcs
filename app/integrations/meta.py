@@ -10,12 +10,12 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-# Default action_type for form conversions.
-# In Meta API, Calendly's invitee_event_type_page appears as
-# offsite_conversion.fb_pixel_custom (aggregate) or
-# offsite_conversion.custom.<rule_id> (specific rule).
-# Override via META_FORM_ACTION_TYPE env var.
-DEFAULT_FORM_ACTION_TYPE = "offsite_conversion.fb_pixel_custom"
+# Default action_type for form conversions (EVENT TYPE PAGE).
+# In Meta API, custom conversions appear as offsite_conversion.custom.<rule_id>.
+# offsite_conversion.fb_pixel_custom is the AGGREGATE of ALL custom conversions
+# and must NOT be used — it inflates the count.
+# Set META_FORM_ACTION_TYPE to your specific rule ID.
+DEFAULT_FORM_ACTION_TYPE = "offsite_conversion.custom.1186972136072751"
 
 
 class MetaAdsClient:
@@ -227,9 +227,10 @@ class MetaAdsClient:
                     seen_action_types.add(atype)
                     if atype == "landing_page_view":
                         page_views = int(float(action.get("value", 0)))
-                    # Match configurable form conversion action_type
-                    # (exact match or contains for flexibility)
-                    if atype == form_at or (form_at and form_at in atype):
+                    # Match configurable form conversion action_type (exact match only)
+                    # Using exact match prevents counting aggregate types like
+                    # fb_pixel_custom which sums ALL custom conversions.
+                    if atype == form_at:
                         meta_forms += int(float(action.get("value", 0)))
 
                 if meta_forms == 0:

@@ -188,48 +188,6 @@ def admin_sync_meta(
         raise HTTPException(status_code=500, detail="manual_sync_failed")
 
 
-@app.get("/admin/debug-actions")
-def debug_actions():
-    """Temporary: show all Meta action_types with totals across campaigns (last 7 days)."""
-    from collections import defaultdict
-    from datetime import date, timedelta
-    from app.integrations.meta import MetaAdsClient
-
-    client = MetaAdsClient()
-    campaigns = client.get_campaigns()
-    action_totals: dict[str, int] = defaultdict(int)
-    campaign_details: list[dict] = []
-
-    end = date.today()
-    start = end - timedelta(days=7)
-
-    for c in campaigns:
-        cid = c.get("id", "")
-        cname = c.get("name", "")
-        raw = client._get_paginated(
-            f"{cid}/insights",
-            {
-                "fields": "actions",
-                "date_preset": "last_7d",
-                "level": "campaign",
-                "time_increment": "all_days",
-            },
-        )
-        camp_actions: dict[str, int] = defaultdict(int)
-        for row in raw:
-            for action in row.get("actions", []):
-                atype = action.get("action_type", "")
-                val = int(float(action.get("value", 0)))
-                action_totals[atype] += val
-                camp_actions[atype] += val
-        campaign_details.append({"id": cid, "name": cname, "actions": dict(camp_actions)})
-
-    return {
-        "total_action_types": dict(sorted(action_totals.items(), key=lambda x: -x[1])),
-        "campaigns": campaign_details,
-    }
-
-
 @app.post("/admin/trigger-sync-meta")
 def trigger_sync_meta():
     """
