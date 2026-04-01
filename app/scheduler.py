@@ -381,7 +381,7 @@ def sync_typeform() -> dict:
                             urgency_stage, best_contact_time,
                             utm_source, utm_medium, utm_campaign,
                             utm_campaign_raw, utm_campaign_normalized, utm_term,
-                            form_completed_at, landed_at,
+                            form_completed_at, submitted_at, landed_at,
                             campaign_id, campaign_name, campaign_match_status, matched_by,
                             is_mql, mql_reason,
                             raw_data, updated_at
@@ -390,7 +390,7 @@ def sync_typeform() -> dict:
                             %s, %s, %s, %s,
                             %s, %s, %s, %s, %s, %s, %s,
                             %s, %s, %s, %s, %s, %s,
-                            %s, %s,
+                            %s, %s, %s,
                             %s, %s, %s, %s,
                             %s, %s,
                             %s::jsonb, NOW()
@@ -414,6 +414,7 @@ def sync_typeform() -> dict:
                             utm_campaign_raw = EXCLUDED.utm_campaign_raw,
                             utm_campaign_normalized = EXCLUDED.utm_campaign_normalized,
                             utm_term = EXCLUDED.utm_term,
+                            submitted_at = EXCLUDED.submitted_at,
                             campaign_id = EXCLUDED.campaign_id,
                             campaign_name = EXCLUDED.campaign_name,
                             campaign_match_status = EXCLUDED.campaign_match_status,
@@ -447,6 +448,7 @@ def sync_typeform() -> dict:
                         parsed["utm_campaign_raw"],
                         parsed["utm_campaign_normalized"],
                         parsed["utm_term"],
+                        parsed["submitted_at"],
                         parsed["submitted_at"],
                         parsed["landed_at"],
                         campaign_id,
