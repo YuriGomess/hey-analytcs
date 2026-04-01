@@ -217,11 +217,22 @@ def dashboard(request: Request):
             totals["sale"] += float(sale or 0)
             totals["responded"] += float(responded or 0)
 
+        # MQL = leads qualificados vindos do Typeform (tabela leads)
+        mql_count = 0
+        with get_db_cursor() as (_, cur):
+            cur.execute(
+                "SELECT COUNT(*) FROM leads WHERE created_at >= NOW() - %s * INTERVAL '1 day'",
+                (selected_days,),
+            )
+            row = cur.fetchone()
+            mql_count = int(row[0]) if row else 0
+
         summaries = {
             "total_leads": int(totals["leads"]),
             "total_spend": totals["spend"],
             "avg_cpl": safe_div(totals["spend"], totals["leads"]),
-            "cost_per_form": safe_div(totals["spend"], totals["leads"]),
+            "mql": mql_count,
+            "cost_per_mql": safe_div(totals["spend"], mql_count),
             "meetings_scheduled": int(totals["meeting_scheduled"]),
             "meetings_done": int(totals["meeting_done"]),
             "sales": int(totals["sale"]),

@@ -414,7 +414,8 @@
       <article class="card"><h3>Total de leads</h3><p class="value">{{ summaries.total_leads }}</p></article>
       <article class="card"><h3>Custo total</h3><p class="value">{{ money_brl(summaries.total_spend) }}</p></article>
       <article class="card"><h3>CPL médio</h3><p class="value">{{ money_brl(summaries.avg_cpl) }}</p></article>
-      <article class="card"><h3>Custo por Form</h3><p class="value">{{ money_brl(summaries.cost_per_form) }}</p></article>
+      <article class="card"><h3>MQL (Typeform)</h3><p class="value">{{ summaries.mql }}</p></article>
+      <article class="card"><h3>Custo de MQL</h3><p class="value">{{ money_brl(summaries.cost_per_mql) }}</p></article>
       <article class="card"><h3>Reuniões agendadas</h3><p class="value">{{ summaries.meetings_scheduled }}</p></article>
       <article class="card"><h3>Reuniões realizadas</h3><p class="value">{{ summaries.meetings_done }}</p></article>
       <article class="card"><h3>Vendas</h3><p class="value">{{ summaries.sales }}</p></article>
