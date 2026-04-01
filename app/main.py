@@ -214,9 +214,9 @@ def trigger_sync_meta():
 
 @app.get("/admin/debug-meta-actions")
 def debug_meta_actions():
-    """Temporary debug endpoint: fetch raw action_types from Meta for one campaign."""
-    from datetime import date, timedelta
+    """Temporary debug endpoint: fetch raw action_types from Meta and show custom conversion totals."""
     from app.integrations.meta import MetaAdsClient
+    from collections import defaultdict
 
     try:
         client = MetaAdsClient()
@@ -224,34 +224,32 @@ def debug_meta_actions():
         if not campaigns:
             return {"error": "no campaigns found"}
 
-        # Fetch insights for first campaign
-        cid = campaigns[0]["id"]
-        cname = campaigns[0].get("name", "")
-        raw_rows = client._get_paginated(
-            f"{cid}/insights",
-            {
-                "fields": "impressions,clicks,inline_link_clicks,ctr,cpc,cpm,spend,actions",
-                "date_preset": "last_30d",
-                "level": "ad",
-                "time_increment": 1,
-            },
-        )
+        # Aggregate custom conversion totals across ALL campaigns
+        custom_conversion_totals: dict[str, int] = defaultdict(int)
+        total_rows = 0
 
-        all_action_types: set[str] = set()
-        sample_actions: list[dict] = []
-        for row in raw_rows:
-            for action in row.get("actions", []):
-                atype = action.get("action_type", "")
-                all_action_types.add(atype)
-                if len(sample_actions) < 30:
-                    sample_actions.append(action)
+        for camp in campaigns[:4]:  # first 4 to avoid timeout
+            cid = camp["id"]
+            raw_rows = client._get_paginated(
+                f"{cid}/insights",
+                {
+                    "fields": "actions",
+                    "date_preset": "last_30d",
+                    "level": "campaign",
+                    "time_increment": "all_days",
+                },
+            )
+            total_rows += len(raw_rows)
+            for row in raw_rows:
+                for action in row.get("actions", []):
+                    atype = action.get("action_type", "")
+                    if "custom" in atype or "invitee" in atype or "lead" in atype:
+                        custom_conversion_totals[atype] += int(float(action.get("value", 0)))
 
         return {
-            "campaign_id": cid,
-            "campaign_name": cname,
-            "raw_insight_rows": len(raw_rows),
-            "all_action_types": sorted(all_action_types),
-            "sample_actions": sample_actions,
+            "campaigns_checked": min(len(campaigns), 4),
+            "custom_conversions_with_totals": dict(sorted(custom_conversion_totals.items(), key=lambda x: -x[1])),
+            "hint": "Set META_FORM_ACTION_TYPE env var to the action_type that represents form conversions",
         }
     except Exception as exc:
         return {"error": str(exc)}
