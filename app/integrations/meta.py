@@ -10,6 +10,14 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+# Default action_type for form conversions.
+# In Meta API, Calendly's invitee_event_type_page appears as
+# offsite_conversion.fb_pixel_custom (aggregate) or
+# offsite_conversion.custom.<rule_id> (specific rule).
+# Override via META_FORM_ACTION_TYPE env var.
+DEFAULT_FORM_ACTION_TYPE = "offsite_conversion.fb_pixel_custom"
+
+
 class MetaAdsClient:
     base_url = "https://graph.facebook.com/v18.0"
 
@@ -17,6 +25,7 @@ class MetaAdsClient:
         self.access_token = access_token or os.getenv("META_ACCESS_TOKEN", "")
         raw_account_id = (ad_account_id or os.getenv("META_AD_ACCOUNT_ID", "")).strip()
         self.ad_account_id = self._normalize_ad_account_id(raw_account_id)
+        self.form_action_type = os.getenv("META_FORM_ACTION_TYPE", DEFAULT_FORM_ACTION_TYPE).strip().lower()
 
     @staticmethod
     def _normalize_ad_account_id(ad_account_id: str) -> str:
@@ -208,6 +217,7 @@ class MetaAdsClient:
 
             rows_without_form_conversion = 0
             seen_action_types: set[str] = set()
+            form_at = self.form_action_type
 
             for item in raw_rows:
                 page_views = 0
@@ -217,9 +227,9 @@ class MetaAdsClient:
                     seen_action_types.add(atype)
                     if atype == "landing_page_view":
                         page_views = int(float(action.get("value", 0)))
-                    # Calendly/custom conversions may appear with prefixes like
-                    # offsite_conversion.fb_pixel_custom.invitee_event_type_page
-                    if "invitee_event_type_page" in atype:
+                    # Match configurable form conversion action_type
+                    # (exact match or contains for flexibility)
+                    if atype == form_at or (form_at and form_at in atype):
                         meta_forms += int(float(action.get("value", 0)))
 
                 if meta_forms == 0:
