@@ -304,6 +304,23 @@ def reattribute_leads():
         return {"status": "error", "error": str(exc)}
 
 
+@app.post("/admin/backfill-submitted-at")
+def backfill_submitted_at():
+    """Backfill submitted_at from form_completed_at for leads that have it NULL."""
+    try:
+        with get_db_cursor() as (conn, cur):
+            cur.execute("""
+                UPDATE leads SET submitted_at = form_completed_at
+                WHERE submitted_at IS NULL AND form_completed_at IS NOT NULL
+            """)
+            updated = cur.rowcount
+            conn.commit()
+        return {"status": "ok", "updated": updated}
+    except Exception as exc:
+        logger.exception("backfill_submitted_at_failed")
+        return {"status": "error", "error": str(exc)}
+
+
 @app.get("/admin/debug-meta-actions")
 def debug_meta_actions():
     """Temporary debug endpoint: fetch raw action_types from Meta and show custom conversion totals."""
